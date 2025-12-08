@@ -6,6 +6,7 @@
       <sourceFolder url="file://$MODULE_DIR$/Fixtures/src" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/Fixture/target" />
       <excludeFolder url="file://$MODULE_DIR$/FixtureTest/target" />
+      <excludeFolder url="file://$MODULE_DIR$/Fixtures/target" />
     </content>
     <orderEntry type="inheritedJdk" />
     <orderEntry type="sourceFolder" forTests="false" />
