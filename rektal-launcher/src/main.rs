@@ -1,13 +1,23 @@
 mod gui;
 
 use std::process::Command;
+use std::rc::Rc;
+
 fn main() {
-    gui::run();
+    let callback = Rc::new(|selected: &str| {
+        println!("Aus main.rs: {}", selected);
+        run_rektal(vec![selected]).expect("Ok");
+    });
 
+    gui::run(callback);
+}
+
+
+fn run_rektal(args:Vec<&str>) -> std::io::Result<()> {
     let status = Command::new("echo")
-        .arg("test")
-        .status()
-        .expect("test");
+        .args(args)
+        .status()?;
 
-    println!("Exit-Code: {}", status);
+    println!("R.E.K.T.A.L. Exit-Code: {}", status);
+    Ok(())
 }
