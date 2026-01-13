@@ -16,7 +16,10 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Build docs
-        run: cargo doc --no-deps
+  	run: |
+    	cd FixtureTest
+    	cargo doc --no-deps
+
 
       - name: Deploy via rsync
         uses: burnett01/rsync-deployments@7.1.0
