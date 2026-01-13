@@ -1,0 +1,28 @@
+name: Deploy Rust Docs
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  docs:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build docs
+        run: cargo doc --no-deps
+
+      - name: Deploy via rsync
+        uses: burnett01/rsync-deployments@v5
+        with:
+          switches: -avz --delete
+          path: target/doc/
+          remote_path: /var/www/rust-docs
+          remote_host: ${{ secrets.DOCS_HOST }}
+          remote_user: ${{ secrets.DOCS_USER }}
+          remote_key: ${{ secrets.DOCS_SSH_KEY }}
