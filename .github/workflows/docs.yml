@@ -1,11 +1,11 @@
-name: Deploy Rust Docs
+name: Build Rust Docs
 
 on:
   push:
     branches: [ "main" ]
 
 jobs:
-  docs:
+  build-docs:
     runs-on: ubuntu-latest
 
     steps:
@@ -19,19 +19,13 @@ jobs:
         run: |
           cd FixtureTest
           cargo doc --no-deps
+          # ZIP der Docs
+          cd target
+          zip -r docs.zip doc
 
-      - name: Deploy via rsync
-        run: |
-          # SSH-Key als Datei speichern
-          echo "${{ secrets.DOCS_SSH_KEY }}" > id_rsa_deploy
-          chmod 600 id_rsa_deploy
-
-          REMOTE_USER="${{ secrets.DOCS_USER }}"
-          REMOTE_HOST="${{ secrets.DOCS_HOST }}"
-
-          # Rsync aufrufen
-          rsync -avzr --delete -e "ssh -i id_rsa_deploy -p 2222 -o StrictHostKeyChecking=no" FixtureTest/target/doc/ "$REMOTE_USER@$REMOTE_HOST:/var/www/rust-docs"
-
-          # Berechtigungen auf dem Server setzen
-          ssh -i id_rsa_deploy -p 2222 $REMOTE_USER@$REMOTE_HOST "chown -R caddy:caddy /var/www/rust-docs && chmod -R 755 /var/www/rust-docs"
+      - name: Upload docs as release artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: rust-docs
+          path: FixtureTest/target/docs.zip
 
