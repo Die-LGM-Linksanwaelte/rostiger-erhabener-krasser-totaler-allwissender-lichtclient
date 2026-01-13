@@ -22,5 +22,8 @@ jobs:
 
       - name: Deploy via rsync
         run: |
-          rsync -avzr --delete -e "ssh -i ${{ secrets.DOCS_SSH_KEY }} -p 2222" FixtureTest/target/doc/ ${{ secrets.DOCS_USER }}@${{ secrets.DOCS_HOST }}:/var/www/rust-docs
+          REMOTE_USER=${{ secrets.DOCS_USER }}
+          REMOTE_HOST=${{ secrets.DOCS_HOST }}
+          SSH_KEY=${{ secrets.DOCS_SSH_KEY }}
+          rsync -avzr --delete -e "ssh -i $SSH_KEY -p 2222 -o StrictHostKeyChecking=no" FixtureTest/target/doc/ $REMOTE_USER@$REMOTE_HOST:/var/www/rust-docs
 
