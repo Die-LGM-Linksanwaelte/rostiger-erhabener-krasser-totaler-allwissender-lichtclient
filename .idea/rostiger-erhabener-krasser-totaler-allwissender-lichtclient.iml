@@ -11,6 +11,7 @@
       <excludeFolder url="file://$MODULE_DIR$/Fixtures/target" />
       <excludeFolder url="file://$MODULE_DIR$/GUITests/target" />
       <excludeFolder url="file://$MODULE_DIR$/rektal-launcher/target" />
+      <excludeFolder url="file://$MODULE_DIR$/target" />
     </content>
     <orderEntry type="inheritedJdk" />
     <orderEntry type="sourceFolder" forTests="false" />

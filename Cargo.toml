@@ -1,0 +1,6 @@
+[workspace]
+members = [
+    "FixtureTest",
+    #"/rektal-launcher",
+    #"crates/common"
+]
