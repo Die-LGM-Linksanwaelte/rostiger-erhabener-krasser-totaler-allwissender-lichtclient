@@ -1,31 +1,8 @@
-name: Build Rust Docs
+- name: Build docs
+  run: cargo doc --no-deps
 
-on:
-  push:
-    branches: [ "main" ]
-
-jobs:
-  build-docs:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Build docs
-        run: |
-          cd FixtureTest
-          cargo doc --no-deps
-          # ZIP der Docs
-          cd target
-          zip -r docs.zip doc
-
-      - name: Upload docs as release artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: rust-docs
-          path: FixtureTest/target/docs.zip
-
+- name: Upload docs
+  uses: actions/upload-artifact@v4
+  with:
+    name: rust-docs
+    path: target/doc
