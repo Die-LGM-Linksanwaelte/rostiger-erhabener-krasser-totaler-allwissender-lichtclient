@@ -1,6 +1,7 @@
 [workspace]
 members = [
     "FixtureTest",
+    "EderStinkt",
     #"/rektal-launcher",
     #"crates/common"
 ]
