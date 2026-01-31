@@ -1,5 +1,5 @@
 use std::cmp::{max, min};
-
+///Struct defining a color
 pub struct Color {
     red: crate::fixture::Channel,
     green: crate::fixture::Channel,
