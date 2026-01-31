@@ -4,8 +4,6 @@
 
 https://rektal-wiki.lgm-linksanwaelte.de/
 
----
-
 ### Rektal Dokumentation
 
 https://rektal-doku.lgm-linksanwaelte.de/
