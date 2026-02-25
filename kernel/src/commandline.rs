@@ -70,7 +70,12 @@ fn new_fixture_type(mut args: SplitAsciiWhitespace) {
                     return;
                 }
             } else {
-                properties.insert(property.to_string(), (channel, None));
+                if !properties.contains_key(property) {
+                    properties.insert(property.to_string(), (channel, None));
+                } else {
+                    eprintln!("{property} can only have one non-fine Channel");
+                    return;
+                }
             }
         }
 
