@@ -54,8 +54,14 @@ fn new_fixture_type(mut args: SplitAsciiWhitespace) {
         } else {
             let channel = channel.parse::<u16>().unwrap();
 
-            //fine-channels
+            if channel > 255 {
+                eprintln!("Error: \"{channel}\" is out of range");
+                return;
+            }
+
             if property.ends_with("_f") {
+                //fine-channels
+
                 // Cut off the _f
                 let property =  &property[..(property.len() - 2)];
                 if let Some((_, opt)) = properties.get_mut(property) {
@@ -70,6 +76,8 @@ fn new_fixture_type(mut args: SplitAsciiWhitespace) {
                     return;
                 }
             } else {
+                //Non-fine channels
+
                 if !properties.contains_key(property) {
                     properties.insert(property.to_string(), (channel, None));
                 } else {
