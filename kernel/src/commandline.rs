@@ -54,7 +54,7 @@ fn new_fixture_type(mut args: SplitAsciiWhitespace) {
         } else {
             let channel = channel.parse::<u16>().unwrap();
 
-            if channel > 255 {
+            if channel > 511 {
                 eprintln!("Error: \"{channel}\" is out of range");
                 return;
             }
