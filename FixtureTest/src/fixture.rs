@@ -1,9 +1,27 @@
 use std::collections::HashMap;
+use std::sync::{LazyLock,Mutex};
 use crate::color::Color;
+
+pub struct FixtureList {
+    pub fixture_types: HashMap<String, FixtureType>,
+    fixtures: HashMap<String, Fixture>,
+}
+
+impl FixtureList {
+    fn new() -> Self {
+        Self {
+            fixture_types: HashMap::new(),
+            fixtures: HashMap::new(),
+        }
+    }
+}
+
+pub static FIXTURE_LIST: LazyLock<Mutex<FixtureList>> = LazyLock::new(|| {
+    Mutex::new(FixtureList::new())
+});
 
 pub(crate) struct Channel{
     pub(crate) value: u16,
-    is_real: bool,
     channel : u16,
     fine_channel: Option<u16>,
 }
@@ -65,52 +83,90 @@ pub(crate) struct Channel{
 ///
 /// * **Other(String, Channel)**
 ///   Any manufacturer-specific or unsupported property, given as a descriptive name and channel index.
-enum Property {
-    Color(Color),
-    Dimmer(Channel),
-    Strobe(Channel),
-    Beam{
-        zoom: Channel,
-        focus: Channel,
-        frost: Channel,
-    },
-    Shutter(Channel),
-    Prism{
-        prism: Channel,
-        prism_rotation: Channel,
-        prism_indexation: Channel,
-    },
-    Gobo{
-        gobo_rotation: Channel,
-        gobo_rotation_speed: Channel,
-        gobo_wheel_rotation: Channel,
-        gobo_wheel_rotation_speed: Channel,
-    },
-    Position{
-        pan: Channel,
-        tilt: Channel,
-    },
-    UV(Channel),
-    Speed(Channel),
-    Fog{
-        fog_intensity: Channel,
-        fog_fan_speed: Channel,
-    },
-
-    Other(String, Channel),
+#[derive(Hash,Eq,PartialEq)]
+enum PropertyType {
+    Dimmer,
+    Strobe,
+    Zoom,
+    Focus,
+    Frost,
+    Prism,
+    PrismRotation,
+    PrismIndexation,
+    GoboRotation,
+    GoboRotationSpeed,
+    GoboWheelRotation,
+    GoboWheelRotationSpeed,
+    Pan,
+    Tilt,
+    FogIntensity,
+    FogFanSpeed,
+    Shutter,
+    UV,
+    Speed,
+    Other(String),
 }
 
 
-struct Fixture {
-    properties: HashMap<String, Property>,
+pub struct FixtureType {
+    properties: HashMap<PropertyType, (u16, Option<u16>)>,
+    name: String
+}
 
+struct Fixture {
+    fixture_type: FixtureType,
+    start_channel: u16,
+    name: String,
+}
+
+impl FixtureType {
+    pub fn new(name: String, properties: HashMap<String, (u16, Option<u16>)>) -> Self {
+        let properties = properties.into_iter().map(|(key, value)| {
+            let property_type = PropertyType::from_string(&*key);
+            (property_type, value)
+        }).collect();
+        FixtureType {
+            properties,
+            name,
+        }
+    }
 }
 
 impl Fixture {
-    fn new(properties_list: HashMap<String, Property>) -> Self {
+    fn new(fixture_type: FixtureType, start_channel:u16, name:String) -> Self {
         Fixture {
-            properties: properties_list
+            fixture_type,
+            start_channel,
+            name,
         }
     }
 
 }
+
+impl PropertyType {
+    fn from_string(s: &str) -> PropertyType {
+        match s {
+            "dimmer" => PropertyType::Dimmer,
+            "strobe" => PropertyType::Strobe,
+            "zoom" => PropertyType::Zoom,
+            "focus" => PropertyType::Focus,
+            "frost" => PropertyType::Frost,
+            "prism" => PropertyType::Prism,
+            "prism-rotation" => PropertyType::PrismRotation,
+            "prism-index" => PropertyType::PrismIndexation,
+            "gobo" => PropertyType::GoboRotation,
+            "gobo-rotation" => PropertyType::GoboRotationSpeed,
+            "gobo-wheel-rotation" => PropertyType::GoboWheelRotation,
+            "gobo-wheel-speed" => PropertyType::GoboWheelRotationSpeed,
+            "pan" => PropertyType::Pan,
+            "tilt" => PropertyType::Tilt,
+            "fog-intensity" => PropertyType::FogIntensity,
+            "fog-fan-speed" => PropertyType::FogFanSpeed,
+            "shutter" => PropertyType::Shutter,
+            "uv" => PropertyType::UV,
+            "speed" => PropertyType::Speed,
+            _ => PropertyType::Other(s.to_string()),
+        }
+    }
+}
+

@@ -3,12 +3,19 @@
 version = 4
 
 [[package]]
+name = "FixtureTest"
+version = "0.1.1"
+
+[[package]]
 name = "artnet_test"
 version = "0.1.0"
 
 [[package]]
 name = "kernel"
-version = "0.1.0"
+version = "0.1.1"
+dependencies = [
+ "FixtureTest",
+]
 
 [[package]]
 name = "rektal"
