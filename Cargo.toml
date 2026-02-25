@@ -3,5 +3,6 @@
 resolver = "1"
 members = [
     "rektal",
-    "kernel"
-, "artnet_test"]
+    "kernel",
+    "artnet_test",
+    "FixtureTest"]
