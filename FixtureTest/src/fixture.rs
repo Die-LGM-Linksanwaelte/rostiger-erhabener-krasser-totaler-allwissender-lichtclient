@@ -4,7 +4,7 @@ use crate::color::Color;
 
 pub struct FixtureList {
     pub fixture_types: HashMap<String, FixtureType>,
-    fixtures: HashMap<String, Fixture>,
+    pub fixtures: HashMap<String, Fixture>,
 }
 
 impl FixtureList {
@@ -113,8 +113,9 @@ pub struct FixtureType {
     name: String
 }
 
-struct Fixture {
+pub struct Fixture {
     fixture_type: FixtureType,
+    properties: HashMap<PropertyType, Channel>,
     start_channel: u16,
     name: String,
 }
@@ -136,6 +137,7 @@ impl Fixture {
     fn new(fixture_type: FixtureType, start_channel:u16, name:String) -> Self {
         Fixture {
             fixture_type,
+            properties: HashMap::new(),
             start_channel,
             name,
         }
