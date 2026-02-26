@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::sync::{LazyLock,Mutex};
+use std::sync::{LazyLock, Mutex};
 use crate::color::Color;
 
 pub struct FixtureList {
@@ -121,15 +121,17 @@ pub struct Fixture {
 }
 
 impl FixtureType {
-    pub fn new(name: String, properties: HashMap<String, (u16, Option<u16>)>) -> Self {
-        let properties = properties.into_iter().map(|(key, value)| {
-            let property_type = PropertyType::from_string(&*key);
-            (property_type, value)
-        }).collect();
-        FixtureType {
+    pub fn new(name: String, properties: HashMap<String, (u16, Option<u16>)>) -> Result<Self, ParseError> {
+        let properties = properties
+            .into_iter()
+            .map(|(key, value)| {
+            let property_type = PropertyType::from_string(&key)?;
+            Ok((property_type, value))
+        }).collect::<Result<HashMap<_, _>, ParseError>>()?;
+        Ok(FixtureType {
             properties,
             name,
-        }
+        })
     }
 }
 
@@ -146,29 +148,40 @@ impl Fixture {
 }
 
 impl PropertyType {
-    fn from_string(s: &str) -> PropertyType {
+    fn from_string(s: &str) -> Result<PropertyType, ParseError> {
         match s {
-            "dimmer" => PropertyType::Dimmer,
-            "strobe" => PropertyType::Strobe,
-            "zoom" => PropertyType::Zoom,
-            "focus" => PropertyType::Focus,
-            "frost" => PropertyType::Frost,
-            "prism" => PropertyType::Prism,
-            "prism-rotation" => PropertyType::PrismRotation,
-            "prism-index" => PropertyType::PrismIndexation,
-            "gobo" => PropertyType::GoboRotation,
-            "gobo-rotation" => PropertyType::GoboRotationSpeed,
-            "gobo-wheel-rotation" => PropertyType::GoboWheelRotation,
-            "gobo-wheel-speed" => PropertyType::GoboWheelRotationSpeed,
-            "pan" => PropertyType::Pan,
-            "tilt" => PropertyType::Tilt,
-            "fog-intensity" => PropertyType::FogIntensity,
-            "fog-fan-speed" => PropertyType::FogFanSpeed,
-            "shutter" => PropertyType::Shutter,
-            "uv" => PropertyType::UV,
-            "speed" => PropertyType::Speed,
-            _ => PropertyType::Other(s.to_string()),
+            "dimmer" => Ok(PropertyType::Dimmer),
+            "strobe" => Ok(PropertyType::Strobe),
+            "zoom" => Ok(PropertyType::Zoom),
+            "focus" => Ok(PropertyType::Focus),
+            "frost" => Ok(PropertyType::Frost),
+            "prism" => Ok(PropertyType::Prism),
+            "prism-rotation" => Ok(PropertyType::PrismRotation),
+            "prism-index" => Ok(PropertyType::PrismIndexation),
+            "gobo" => Ok(PropertyType::GoboRotation),
+            "gobo-rotation" => Ok(PropertyType::GoboRotationSpeed),
+            "gobo-wheel-rotation" => Ok(PropertyType::GoboWheelRotation),
+            "gobo-wheel-speed" => Ok(PropertyType::GoboWheelRotationSpeed),
+            "pan" => Ok(PropertyType::Pan),
+            "tilt" => Ok(PropertyType::Tilt),
+            "fog-intensity" => Ok(PropertyType::FogIntensity),
+            "fog-fan-speed" => Ok(PropertyType::FogFanSpeed),
+            "shutter" => Ok(PropertyType::Shutter),
+            "uv" => Ok(PropertyType::UV),
+            "speed" => Ok(PropertyType::Speed),
+            _ => {
+                if let Some(suffix) = s.strip_prefix("other_") {
+                    Ok(PropertyType::Other(suffix.to_string()))
+                } else {
+                    Err(ParseError::InvalidPropertyType(s.to_string()))
+                }
+            }
         }
     }
+}
+
+#[derive(Debug)]
+pub enum ParseError {
+    InvalidPropertyType(String),
 }
 

@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::str::SplitAsciiWhitespace;
 use FixtureTest::fixture;
 use FixtureTest::fixture::FixtureType;
+use FixtureTest::fixture::ParseError::InvalidPropertyType;
 
 pub(crate) fn parse_command(line: String) {
 
@@ -89,5 +90,11 @@ fn new_fixture_type(mut args: SplitAsciiWhitespace) {
 
     }
     let mut list = fixture::FIXTURE_LIST.lock().unwrap();
-    list.fixture_types.insert(name.clone(), FixtureType::new(name, properties));
+    let fixture_type = FixtureType::new(name.clone(), properties);
+    if let Ok(fixture_type) = fixture_type {
+        list.fixture_types.insert(name, fixture_type);
+    } else if let Err(fixture_type) = fixture_type {
+        let InvalidPropertyType(fixture_type) = fixture_type;
+        eprintln!("Error: \"{fixture_type}\" is not a valid FixtureType");
+    }
 }
