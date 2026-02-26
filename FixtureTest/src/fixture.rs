@@ -26,6 +26,49 @@ pub(crate) struct Channel{
     fine_channel: Option<u16>,
 }
 
+impl Channel {
+    fn new(
+        channel_numbers: (u16, Option<u16>),
+        default_value: u16,
+        device_channel: u16
+    ) -> Result<Self, ChannelError> {
+
+        let channel = Self::checked_add(channel_numbers.0, device_channel)?;
+        let fine_channel = if let Some(fine) = channel_numbers.1 {
+            Some (
+                Self::checked_add(fine, default_value)?
+            )
+        } else {
+            None
+        };
+        Ok(Channel {
+            value: default_value,
+            channel,
+            fine_channel,
+        })
+    }
+
+    fn checked_add(value1: u16, value2: u16) -> Result<u16, ChannelError> {
+        value1
+            .checked_add(value2)
+            .filter(|&x| x <= 512)
+            .ok_or(ChannelError::OutOfRange)
+    }
+
+    fn get_default_value(property_type: PropertyType) -> u16 {
+        match property_type {
+            PropertyType::Pan => u16::MAX/2,
+            PropertyType::Tilt => u16::MAX/2,
+            _ => 0
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum ChannelError {
+    OutOfRange,
+}
+
 /// Represents the various configurable properties of a lighting fixture.
 ///
 /// This enum encapsulates all supported attribute types of a fixture,
@@ -83,7 +126,7 @@ pub(crate) struct Channel{
 ///
 /// * **Other(String, Channel)**
 ///   Any manufacturer-specific or unsupported property, given as a descriptive name and channel index.
-#[derive(Hash,Eq,PartialEq)]
+#[derive(Hash,Eq,PartialEq,Clone)]
 enum PropertyType {
     Dimmer,
     Strobe,
@@ -114,7 +157,7 @@ pub struct FixtureType {
 }
 
 pub struct Fixture {
-    fixture_type: FixtureType,
+    fixture_type: String,
     properties: HashMap<PropertyType, Channel>,
     start_channel: u16,
     name: String,
@@ -136,13 +179,20 @@ impl FixtureType {
 }
 
 impl Fixture {
-    fn new(fixture_type: FixtureType, start_channel:u16, name:String) -> Self {
-        Fixture {
-            fixture_type,
-            properties: HashMap::new(),
+    pub fn new(fixture_type: &FixtureType, start_channel:u16, name:String) -> Result<Self, ChannelError> {
+        let properties = fixture_type.properties
+            .iter()
+            .map(|(property_type, channel)| {
+                let default_value = Channel::get_default_value(property_type.clone());
+                Channel::new(*channel, default_value, start_channel)
+                    .map(|channel| (property_type.clone(), channel))
+        }).collect::<Result<HashMap<PropertyType, Channel>,ChannelError>>()?;
+        Ok(Self {
+            fixture_type: fixture_type.name.clone(),
+            properties,
             start_channel,
             name,
-        }
+        })
     }
 
 }

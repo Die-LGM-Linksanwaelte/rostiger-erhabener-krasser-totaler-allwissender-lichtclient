@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::str::SplitAsciiWhitespace;
 use FixtureTest::fixture;
-use FixtureTest::fixture::FixtureType;
+use FixtureTest::fixture::{Fixture, FixtureType};
 use FixtureTest::fixture::ParseError::InvalidPropertyType;
 
 pub(crate) fn parse_command(line: String) {
@@ -25,8 +25,8 @@ pub(crate) fn parse_command(line: String) {
             their channels.");
         }
 
-        Some("add") => {
-
+        Some("add") if arg_count == 3 => {
+            new_fixture(line_iter);
         }
 
         Some("set") => {
@@ -104,4 +104,47 @@ fn new_fixture_type(mut args: SplitAsciiWhitespace) {
         let InvalidPropertyType(fixture_type) = fixture_type;
         eprintln!("Error: \"{fixture_type}\" is not a valid FixtureType");
     }
+}
+
+fn new_fixture(mut args: SplitAsciiWhitespace) {
+    let name = args.next().unwrap().to_string();
+    let fixture_type_name = args.next().unwrap().to_string();
+    let channel = args.next().unwrap().to_string();
+    
+    if let Err(_) = channel.parse::<u16>() {
+        eprintln!("Error: \"{fixture_type_name}\" is not a valid channel-number");
+        return;
+    }
+    let channel = channel.parse::<u16>().unwrap();
+
+    if channel > 511 {
+        eprintln!("Error: \"{channel}\" is out of range");
+        return;
+    }
+    
+    let mut list = fixture::FIXTURE_LIST.lock().unwrap();
+    if let None = list.fixture_types.get(&fixture_type_name) {
+        eprintln!("Error: \"{fixture_type_name}\" is not a valid FixtureType");
+        return;
+    }
+    let fixture_type= list.fixture_types.get(&fixture_type_name).unwrap();
+
+    let fixture = Fixture::new(
+        fixture_type,channel,name.clone()
+    );
+
+    if let Err(_) = fixture {
+        eprintln!("Error: fixture is too big to fit into this remaining universe");
+        return;
+    }
+
+    match list.fixtures.entry(name.clone()) {
+        std::collections::hash_map::Entry::Occupied(_) => {
+            eprintln!("Error: \"{name}\" already exists");
+        }
+        std::collections::hash_map::Entry::Vacant(entry) => {
+            entry.insert(fixture.unwrap());
+        }
+    }
+    
 }
