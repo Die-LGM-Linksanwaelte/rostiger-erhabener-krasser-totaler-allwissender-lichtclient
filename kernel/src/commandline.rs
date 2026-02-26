@@ -92,7 +92,14 @@ fn new_fixture_type(mut args: SplitAsciiWhitespace) {
     let mut list = fixture::FIXTURE_LIST.lock().unwrap();
     let fixture_type = FixtureType::new(name.clone(), properties);
     if let Ok(fixture_type) = fixture_type {
-        list.fixture_types.insert(name, fixture_type);
+        match list.fixture_types.entry(name.clone()) {
+            std::collections::hash_map::Entry::Occupied(_) => {
+                eprintln!("Error: \"{name}\" already exists");
+            }
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(fixture_type);
+            }
+        }
     } else if let Err(fixture_type) = fixture_type {
         let InvalidPropertyType(fixture_type) = fixture_type;
         eprintln!("Error: \"{fixture_type}\" is not a valid FixtureType");
