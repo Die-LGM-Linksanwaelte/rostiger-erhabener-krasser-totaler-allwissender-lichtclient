@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex};
-use crate::color::Color;
+use crate::color::{Color, ColorType};
 
 pub struct FixtureList {
     pub fixture_types: HashMap<String, FixtureType>,
@@ -27,7 +27,7 @@ pub(crate) struct Channel{
 }
 
 impl Channel {
-    fn new(
+    pub(crate) fn new(
         channel_numbers: (u16, Option<u16>),
         default_value: u16,
         device_channel: u16
@@ -62,11 +62,6 @@ impl Channel {
             _ => 0
         }
     }
-}
-
-#[derive(Debug)]
-pub enum ChannelError {
-    OutOfRange,
 }
 
 /// Represents the various configurable properties of a lighting fixture.
@@ -152,12 +147,14 @@ enum PropertyType {
 
 
 pub struct FixtureType {
+    color: Option<ColorType>,
     properties: HashMap<PropertyType, (u16, Option<u16>)>,
     name: String
 }
 
 pub struct Fixture {
     fixture_type: String,
+    color: Option<Color>,
     properties: HashMap<PropertyType, Channel>,
     start_channel: u16,
     name: String,
@@ -165,14 +162,27 @@ pub struct Fixture {
 
 impl FixtureType {
     pub fn new(name: String, properties: HashMap<String, (u16, Option<u16>)>) -> Result<Self, ParseError> {
-        let properties = properties
-            .into_iter()
-            .map(|(key, value)| {
+        let mut color = ColorType::new();
+        let mut new_properties = HashMap::new();
+
+        for (key, value) in properties {
+            if color.parse(key.clone(), value)? {
+                continue
+            }
+
             let property_type = PropertyType::from_string(&key)?;
-            Ok((property_type, value))
-        }).collect::<Result<HashMap<_, _>, ParseError>>()?;
+            new_properties.insert(property_type, value);
+        }
+
+        let color = if color.exists() {
+           Some(color)
+        } else {
+           None
+        };
+
         Ok(FixtureType {
-            properties,
+            color,
+            properties: new_properties,
             name,
         })
     }
@@ -180,6 +190,11 @@ impl FixtureType {
 
 impl Fixture {
     pub fn new(fixture_type: &FixtureType, start_channel:u16, name:String) -> Result<Self, ChannelError> {
+        let color = fixture_type.color.as_ref()
+            .map(|c| {
+                Color::new(c, start_channel)
+            })
+            .transpose()?;
         let properties = fixture_type.properties
             .iter()
             .map(|(property_type, channel)| {
@@ -188,6 +203,7 @@ impl Fixture {
                     .map(|channel| (property_type.clone(), channel))
         }).collect::<Result<HashMap<PropertyType, Channel>,ChannelError>>()?;
         Ok(Self {
+            color,
             fixture_type: fixture_type.name.clone(),
             properties,
             start_channel,
@@ -233,5 +249,10 @@ impl PropertyType {
 #[derive(Debug)]
 pub enum ParseError {
     InvalidPropertyType(String),
+    MultipleColorOutputTypes(String),
 }
 
+#[derive(Debug)]
+pub enum ChannelError {
+    OutOfRange,
+}

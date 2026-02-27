@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::str::SplitAsciiWhitespace;
 use FixtureTest::fixture;
 use FixtureTest::fixture::{Fixture, FixtureType};
-use FixtureTest::fixture::ParseError::InvalidPropertyType;
+use FixtureTest::fixture::ParseError::{InvalidPropertyType, MultipleColorOutputTypes};
 
 pub(crate) fn parse_command(line: String) {
 
@@ -101,8 +101,14 @@ fn new_fixture_type(mut args: SplitAsciiWhitespace) {
             }
         }
     } else if let Err(fixture_type) = fixture_type {
-        let InvalidPropertyType(fixture_type) = fixture_type;
-        eprintln!("Error: \"{fixture_type}\" is not a valid FixtureType");
+        if let InvalidPropertyType(fixture_type) = fixture_type {
+            eprintln!("Error: \"{fixture_type}\" is not a valid FixtureType");
+        } else if let MultipleColorOutputTypes(error_message) = fixture_type {
+            eprintln!("{error_message}");
+        } else { 
+            unreachable!();
+        }
+        return;
     }
 }
 

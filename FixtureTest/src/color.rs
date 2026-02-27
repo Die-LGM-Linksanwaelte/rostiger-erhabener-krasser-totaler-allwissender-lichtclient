@@ -1,32 +1,163 @@
-use std::cmp::{max, min};
+use std::cmp::{max, min, PartialEq};
+use crate::color::OutputType::{CMY, HSV, RGB};
+use crate::fixture::{Channel, ChannelError, ParseError};
+
 ///Struct defining a color
 pub struct Color {
-    red: crate::fixture::Channel,
-    green: crate::fixture::Channel,
-    blue: crate::fixture::Channel,
-    cyan: crate::fixture::Channel,
-    magenta: crate::fixture::Channel,
-    yellow: crate::fixture::Channel,
-    hue: crate::fixture::Channel,
-    saturation: crate::fixture::Channel,
-    value: crate::fixture::Channel,
+    output_type: OutputType,
+    color1: Option<Channel>,
+    color2: Option<Channel>,
+    color3: Option<Channel>,
+    red: u16,
+    green: u16,
+    blue: u16,
+    cyan: u16,
+    magenta: u16,
+    yellow: u16,
+    hue: u16,
+    saturation: u16,
+    value: u16,
+}
+
+pub struct ColorType {
+    output_type: Option<OutputType>,
+    color1: Option<(u16, Option<u16>)>,
+    color2: Option<(u16, Option<u16>)>,
+    color3: Option<(u16, Option<u16>)>,
+}
+#[derive(Debug, PartialEq, Copy, Clone)]
+enum OutputType {
+    RGB,
+    HSV,
+    CMY
+}
+
+impl ColorType {
+    pub(crate) fn new() -> Self {
+        Self {
+            output_type: None,
+            color1: None,
+            color2: None,
+            color3: None,
+        }
+    }
+
+    pub(crate) fn parse(&mut self, s: String, value: (u16, Option<u16>)) -> Result<bool, ParseError> {
+        let (new_type, slot) = match s.as_str() {
+            "red"        => (RGB, 1),
+            "green"      => (RGB, 2),
+            "blue"       => (RGB, 3),
+
+            "cyan"       => (CMY, 1),
+            "magenta"    => (CMY, 2),
+            "yellow"     => (CMY, 3),
+
+            "hue"        => (HSV, 1),
+            "saturation" => (HSV, 2),
+            "value"      => (HSV, 3),
+
+            _ => return Ok(false),
+        };
+
+        if let Some(old_type) = self.output_type {
+            if old_type != new_type {
+                return Err(ParseError::MultipleColorOutputTypes(
+                   format!("{s} is incompatible with {:?}", old_type)
+                ));
+            }
+        }
+
+        self.output_type = Some(new_type);
+
+        let target = match slot {
+            1 => &mut self.color1,
+            2 => &mut self.color2,
+            3 => &mut self.color3,
+            _ => unreachable!()
+        };
+
+        *target = Some(value);
+
+        Ok(true)
+    }
+
+    pub(crate) fn exists(&self) -> bool {
+        self.output_type.is_some()
+    }
 }
 
 impl Color {
-    fn set_rgb(&mut self, red: u16, green: u16, blue: u16) {
-        self.red.value = red;
-        self.green.value = green;
-        self.blue.value = blue;
 
-        self.cyan.value = red - u16::MAX;
-        self.magenta.value = green - u16::MAX;
-        self.yellow.value = blue - u16::MAX;
+    pub(crate) fn new(color_type: &ColorType, device_channel: u16) -> Result<Self, ChannelError> {
+        let default_value = if color_type.output_type == Some(CMY) {
+            u16::MAX
+        } else if let Some(_) = color_type.output_type {
+            0
+        } else {
+            //Code should never create ColorType, if ColorType does not exist, like defined in ColorType.exists
+            unreachable!();
+        };
+
+        let color1 = color_type.color1
+            .map(|c| Channel::new(c, default_value, device_channel))
+            .transpose()?;
+        let color2 = color_type.color2
+            .map(|c| Channel::new(c, default_value, device_channel))
+            .transpose()?;
+        let color3 = color_type.color3
+            .map(|c| Channel::new(c,default_value, device_channel))
+            .transpose()?;
+
+
+        Ok(Self {
+            output_type: color_type.output_type.unwrap(),
+            color1,
+            color2,
+            color3,
+            red: 0,
+            green: 0,
+            blue: 0,
+            cyan: u16::MAX,
+            magenta: u16::MAX,
+            yellow: u16::MAX,
+            hue: 0,
+            saturation: 0,
+            value: 0,
+
+        })
+    }
+    
+    fn set_color(&mut self) {
+        let (v1, v2, v3) = match self.output_type {
+            RGB => (self.red, self.green, self.blue),
+            HSV => (self.hue, self.saturation, self.value),
+            CMY => (self.cyan, self.magenta, self.red),
+        };
+        if let Some(c) = self.color1.as_mut() {
+            c.value = v1
+        }
+        if let Some(c) = self.color2.as_mut() {
+            c.value = v2
+        }
+        if let Some(c) = self.color3.as_mut() {
+            c.value = v3
+        }
+    }
+
+    fn set_rgb(&mut self, red: u16, green: u16, blue: u16) {
+        self.red = red;
+        self.green = green;
+        self.blue = blue;
+
+        self.cyan = red - u16::MAX;
+        self.magenta = green - u16::MAX;
+        self.yellow = blue - u16::MAX;
 
         let max = max(red, max(green, blue));
         let min = min(red, min(green, blue));
         let delta = max - min;
-        self.value.value = max;
-        self.saturation.value = if max == 0 {
+        self.value = max;
+        self.saturation = if max == 0 {
             0
         } else {
             (delta * u16::MAX) / max
@@ -46,52 +177,56 @@ impl Color {
             hue = hue + u16::MAX as i32;
         }
 
-        self.hue.value = hue as u16;
+        self.hue = hue as u16;
+        
+        self.set_color()
     }
 
     fn set_hsv(&mut self, hue: u16, saturation: u16, value: u16) {
-        self.hue.value = hue;
-        self.saturation.value = saturation;
-        self.value.value = value;
+        self.hue = hue;
+        self.saturation = saturation;
+        self.value = value;
         //Achtung: es folgt eine unstetige Kackfunktion
         let c = value * saturation;
         let h = hue as f32 / (u16::MAX as f32 / 6f32);
         let x = c as f32 * (1.0 - ((h % 2.0) - 1.0).abs());
         match h {
             n if n < 1.0 => {
-                self.red.value = c;
-                self.green.value = x as u16;
-                self.blue.value = 0;
+                self.red = c;
+                self.green = x as u16;
+                self.blue = 0;
             }
             n if n >= 1.0 && n < 2.0 => {
-                self.red.value = x as u16;
-                self.green.value = c;
-                self.blue.value = 0;
+                self.red = x as u16;
+                self.green = c;
+                self.blue = 0;
             }
             n if n >= 2.0 && n < 3.0 => {
-                self.red.value = 0;
-                self.green.value = c;
-                self.blue.value = x as u16;
+                self.red = 0;
+                self.green = c;
+                self.blue = x as u16;
             }
             n if n >= 3.0 && n < 4.0 => {
-                self.red.value = 0;
-                self.green.value = x as u16;
-                self.blue.value = c;
+                self.red = 0;
+                self.green = x as u16;
+                self.blue = c;
             }
             n if n >= 4.0 && n < 5.0 => {
-                self.red.value = x as u16;
-                self.green.value = 0;
-                self.blue.value = c;
+                self.red = x as u16;
+                self.green = 0;
+                self.blue = c;
             }
             n if n >= 5.0 && n < 6.0 => {
-                self.red.value = c;
-                self.green.value = 0;
-                self.blue.value = x as u16;
+                self.red = c;
+                self.green = 0;
+                self.blue = x as u16;
             }
             _ => {}
         }
-        self.cyan.value = self.red.value - u16::MAX;
-        self.magenta.value = self.green.value - u16::MAX;
-        self.yellow.value = self.blue.value - u16::MAX;
+        self.cyan = self.red - u16::MAX;
+        self.magenta = self.green - u16::MAX;
+        self.yellow= self.blue - u16::MAX;
+        
+        self.set_color()
     }
 }
