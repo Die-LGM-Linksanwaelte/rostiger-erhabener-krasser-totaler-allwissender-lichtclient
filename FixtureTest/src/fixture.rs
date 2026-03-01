@@ -1,3 +1,4 @@
+//#![allow(dead_code)]
 use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex};
 use crate::color::{Color, ColorType};
@@ -189,7 +190,7 @@ impl FixtureType {
 }
 
 impl Fixture {
-    pub fn new(fixture_type: &FixtureType, start_channel:u16, name:String) -> Result<Self, ChannelError> {
+    pub fn new(fixture_type: &FixtureType, start_channel:u16, universe: u16, name:String) -> Result<Self, ChannelError> {
         let color = fixture_type.color.as_ref()
             .map(|c| {
                 Color::new(c, start_channel)
@@ -207,6 +208,7 @@ impl Fixture {
             fixture_type: fixture_type.name.clone(),
             properties,
             start_channel,
+            universe,
             name,
         })
     }

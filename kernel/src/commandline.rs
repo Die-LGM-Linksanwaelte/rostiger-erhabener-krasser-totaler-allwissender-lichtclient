@@ -25,7 +25,7 @@ pub(crate) fn parse_command(line: String) {
             their channels.");
         }
 
-        Some("add") if arg_count == 3 => {
+        Some("add") if arg_count == 4 => {
             new_fixture(line_iter);
         }
 
@@ -115,6 +115,7 @@ fn new_fixture_type(mut args: SplitAsciiWhitespace) {
 fn new_fixture(mut args: SplitAsciiWhitespace) {
     let name = args.next().unwrap().to_string();
     let fixture_type_name = args.next().unwrap().to_string();
+    let universe = args.next().unwrap().to_string();
     let channel = args.next().unwrap().to_string();
     
     if let Err(_) = channel.parse::<u16>() {
@@ -122,6 +123,12 @@ fn new_fixture(mut args: SplitAsciiWhitespace) {
         return;
     }
     let channel = channel.parse::<u16>().unwrap();
+    
+    if let Err(_) = universe.parse::<u16>() {
+        eprintln!("Error: \"{fixture_type_name}\" is not a valid universe-number");
+        return;
+    }
+    let universe = universe.parse::<u16>().unwrap();
 
     if channel > 511 {
         eprintln!("Error: \"{channel}\" is out of range");
@@ -136,7 +143,7 @@ fn new_fixture(mut args: SplitAsciiWhitespace) {
     let fixture_type= list.fixture_types.get(&fixture_type_name).unwrap();
 
     let fixture = Fixture::new(
-        fixture_type,channel,name.clone()
+        fixture_type,channel,universe, name.clone()
     );
 
     if let Err(_) = fixture {
