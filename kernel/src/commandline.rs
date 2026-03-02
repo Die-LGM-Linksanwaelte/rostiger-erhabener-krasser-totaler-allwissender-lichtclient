@@ -29,12 +29,22 @@ pub(crate) fn parse_command(line: String) {
             new_fixture(line_iter);
         }
 
+        Some("add") => {
+            println!("Error: \"add\" needs a name, a fixture-type, a start-channel and a universe as arguments")
+        }
+
         Some("set") => {
 
         }
 
         Some("type") => {
 
+        }
+
+        Some("break") => {
+            let universe = universe_count();
+            let guard = fixture::FIXTURE_LIST.lock().unwrap();
+            println!("Add a breakpoint at this point in the code to check the datastructures");
         }
 
         _ => {
@@ -49,6 +59,7 @@ fn new_fixture_type(mut args: SplitAsciiWhitespace) {
     let mut seen_channels = HashSet::new();
 
     while let Some(property) = args.next() {
+
         //We can do that without throwing an Error, because args has an even number of elements at this point
         let channel = args.next().unwrap();
         if let Err(_) = channel.parse::<u16>() {

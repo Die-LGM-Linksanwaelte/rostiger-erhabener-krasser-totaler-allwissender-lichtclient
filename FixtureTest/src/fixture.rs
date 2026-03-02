@@ -60,6 +60,8 @@ impl Channel {
         } else {
             None
         };
+
+
         Ok(Channel {
             value: default_value,
             channel,
@@ -276,6 +278,7 @@ impl Fixture {
                 Color::new(c, start_channel)
             })
             .transpose()?;
+
         let properties = fixture_type.properties
             .iter()
             .map(|(property_type, channel)| {
