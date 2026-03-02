@@ -1,7 +1,7 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::str::SplitAsciiWhitespace;
 use FixtureTest::fixture;
-use FixtureTest::fixture::{Fixture, FixtureType};
+use FixtureTest::fixture::{universe_count, ChannelError, Fixture, FixtureType};
 use FixtureTest::fixture::ParseError::{InvalidPropertyType, MultipleColorOutputTypes};
 
 pub(crate) fn parse_command(line: String) {
@@ -46,6 +46,8 @@ pub(crate) fn parse_command(line: String) {
 fn new_fixture_type(mut args: SplitAsciiWhitespace) {
     let name = args.next().unwrap().to_string();
     let mut properties: HashMap<String, (u16, Option<u16>)> = HashMap::new();
+    let mut seen_channels = HashSet::new();
+
     while let Some(property) = args.next() {
         //We can do that without throwing an Error, because args has an even number of elements at this point
         let channel = args.next().unwrap();
@@ -57,6 +59,11 @@ fn new_fixture_type(mut args: SplitAsciiWhitespace) {
 
             if channel > 511 {
                 eprintln!("Error: \"{channel}\" is out of range");
+                return;
+            }
+
+            if !seen_channels.insert(channel) {
+                eprintln!("Error: Channel \"{channel}\" has multiple properties bound to it.");
                 return;
             }
 
@@ -123,12 +130,12 @@ fn new_fixture(mut args: SplitAsciiWhitespace) {
         return;
     }
     let channel = channel.parse::<u16>().unwrap();
-    
-    if let Err(_) = universe.parse::<u16>() {
+
+    if let Err(_) = universe.parse::<usize>() {
         eprintln!("Error: \"{fixture_type_name}\" is not a valid universe-number");
         return;
     }
-    let universe = universe.parse::<u16>().unwrap();
+    let universe = universe.parse().unwrap();
 
     if channel > 511 {
         eprintln!("Error: \"{channel}\" is out of range");
@@ -146,8 +153,15 @@ fn new_fixture(mut args: SplitAsciiWhitespace) {
         fixture_type,channel,universe, name.clone()
     );
 
-    if let Err(_) = fixture {
+    if let Err(ChannelError::ChannelOutOfRange) = fixture {
         eprintln!("Error: fixture is too big to fit into this remaining universe");
+        return;
+    } else if let Err(ChannelError::UniverseOutOfRange) = fixture {
+        panic!("Fatal Error: Fixture created in Universe that does not exist. Normally, the programm should \
+        automatically create an universe, but somehow, this hasn't happened");
+    } else if let Err(ChannelError::ChannelAlreadyInUse(overlapping_fixture)) = fixture {
+        eprintln!("Error: At least one Channel of this fixture is overlapping with {}.\
+        Fixture has not been created.", overlapping_fixture);
         return;
     }
 
