@@ -2,6 +2,7 @@
 use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex};
 use crate::color::{Color, ColorType};
+use crate::fixture::ChannelReservation::{Empty, Pending, Reserved};
 
 pub struct FixtureList {
     pub fixture_types: HashMap<String, FixtureType>,
@@ -14,6 +15,23 @@ impl FixtureList {
             fixture_types: HashMap::new(),
             fixtures: HashMap::new(),
         }
+    }
+}
+
+static DMX_CONFIGURATION: LazyLock<Mutex<Vec<[ChannelReservation<String, PropertyType>; 512]>>> = LazyLock::new(||{
+    Mutex::new(Vec::new())
+});
+
+pub fn universe_count() -> usize {
+    DMX_CONFIGURATION.lock().expect("Failed to lock DMX_CONFIGURATION").len()
+}
+
+pub fn ensure_universe_count(size: usize) {
+    if size > universe_count() {
+        let mut config = DMX_CONFIGURATION.lock().expect("Failed to lock DMX_CONFIGURATION");
+        config.resize_with(size, || {
+            std::array::from_fn(|_| Empty)
+        })
     }
 }
 
@@ -49,11 +67,71 @@ impl Channel {
         })
     }
 
+    //TODO Add the option to have some fixtures go over Universe-Borders
     fn checked_add(value1: u16, value2: u16) -> Result<u16, ChannelError> {
         value1
             .checked_add(value2)
             .filter(|&x| x <= 512)
-            .ok_or(ChannelError::OutOfRange)
+            .ok_or(ChannelError::ChannelOutOfRange)
+    }
+
+    fn reserve_pending(&self, fixture_name: &str, universe: usize) -> Result<(), ChannelError> {
+        let mut dmx_config = DMX_CONFIGURATION.lock().expect("Failed to lock DMX_CONFIGURATION");
+
+        //Since ensure_universe_count should have been executed before, this Error should never occur, therefore it
+        // should panic
+        let universe = dmx_config.get_mut(universe - 1)
+            .ok_or(ChannelError::UniverseOutOfRange).expect("Universe out of range");
+
+        if let Reserved(existing,_) = universe[self.channel as usize].clone() {
+            return Err(ChannelError::ChannelAlreadyInUse(existing));
+        }
+
+        if let Some(fine_channel) = self.fine_channel {
+            if let Reserved(existing,_) = universe[fine_channel as usize].clone() {
+                return Err(ChannelError::ChannelAlreadyInUse(existing));
+            }
+
+            universe[fine_channel as usize] = Pending(fixture_name.to_string());
+        }
+        universe[self.channel as usize] = Pending(fixture_name.to_string());
+
+        Ok(())
+    }
+
+    fn reserve_final(&self, fixture_name: &str, universe: usize, property_type: PropertyType) {
+        let mut dmx_config = DMX_CONFIGURATION.lock().expect("Failed to lock DMX_CONFIGURATION");
+
+        //Since ensure_universe_count should have been executed before, this Error should never occur, therefore it
+        // should panic
+        let universe = dmx_config.get_mut(universe - 1)
+            .ok_or(ChannelError::UniverseOutOfRange).expect("Universe out of range.");
+
+        if let Pending(existing) = universe[self.channel as usize].clone() {
+            if existing == fixture_name {
+                universe[self.channel as usize] = Reserved(existing, property_type.clone());
+            } else {
+                panic!("A property of another fixture has been set to pending,\
+                 cant reserve channel for {fixture_name}")
+            }
+        } else {
+            panic!("Error: In {fixture_name}, a channel has not correctly been set to Pending. \
+            This could happen if the fixture_type has multiple properties bound to the same channel.");
+        }
+
+        if let Some(fine_channel) = self.fine_channel {
+            if let Pending(existing) = universe[fine_channel as usize].clone() {
+                if existing == fixture_name {
+                    universe[fine_channel as usize] = Reserved(existing, property_type);
+                } else {
+                    panic!("A property of another fixture has been set to pending,\
+                 cant reserve fine-channel for {fixture_name}")
+                }
+            } else {
+                panic!("Error: In {fixture_name}, a fine-channel has not correctly been set to Pending. \
+            This could happen if the fixture_type has multiple properties bound to the same channel.");
+            }
+        }
     }
 
     fn get_default_value(property_type: PropertyType) -> u16 {
@@ -158,6 +236,7 @@ pub struct Fixture {
     color: Option<Color>,
     properties: HashMap<PropertyType, Channel>,
     start_channel: u16,
+    universe: usize,
     name: String,
 }
 
@@ -190,7 +269,8 @@ impl FixtureType {
 }
 
 impl Fixture {
-    pub fn new(fixture_type: &FixtureType, start_channel:u16, universe: u16, name:String) -> Result<Self, ChannelError> {
+    pub fn new(fixture_type: &FixtureType, start_channel:u16, universe: usize, name:String) -> Result<Self, ChannelError> {
+        ensure_universe_count(universe);
         let color = fixture_type.color.as_ref()
             .map(|c| {
                 Color::new(c, start_channel)
@@ -200,9 +280,15 @@ impl Fixture {
             .iter()
             .map(|(property_type, channel)| {
                 let default_value = Channel::get_default_value(property_type.clone());
-                Channel::new(*channel, default_value, start_channel)
-                    .map(|channel| (property_type.clone(), channel))
+                let channel = Channel::new(*channel, default_value, start_channel)?;
+                channel.reserve_pending(&*name, universe)?;
+                Ok((property_type.clone(), channel))
         }).collect::<Result<HashMap<PropertyType, Channel>,ChannelError>>()?;
+
+        properties.iter().for_each(|(property_type, channel)| {
+            channel.reserve_final(&*name, universe, property_type.clone());
+        });
+
         Ok(Self {
             color,
             fixture_type: fixture_type.name.clone(),
@@ -248,6 +334,13 @@ impl PropertyType {
     }
 }
 
+#[derive(Clone)]
+enum ChannelReservation<T, U> {
+    Empty,
+    Pending(T),
+    Reserved(T, U),
+}
+
 #[derive(Debug)]
 pub enum ParseError {
     InvalidPropertyType(String),
@@ -256,5 +349,7 @@ pub enum ParseError {
 
 #[derive(Debug)]
 pub enum ChannelError {
-    OutOfRange,
+    ChannelOutOfRange,
+    UniverseOutOfRange,
+    ChannelAlreadyInUse(String),
 }
