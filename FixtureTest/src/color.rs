@@ -1,6 +1,6 @@
 use std::cmp::{max, min, PartialEq};
 use crate::color::OutputType::{CMY, HSV, RGB};
-use crate::fixture::{Channel, ChannelError, ParseError};
+use crate::fixture::{Channel, ChannelError, ParseError, PropertyType};
 
 ///Struct defining a color
 pub struct Color {
@@ -30,6 +30,36 @@ enum OutputType {
     RGB,
     HSV,
     CMY
+}
+
+#[derive(Clone)]
+pub enum ColorPropertyType {
+    Red,
+    Green,
+    Blue,
+    Cyan,
+    Magenta,
+    Yellow,
+    Hue,
+    Saturation,
+    Value
+}
+
+impl ColorPropertyType {
+    fn new(color_number: u16, output_type: OutputType) -> Option<ColorPropertyType> {
+        match (color_number, output_type) {
+            (1, RGB) => Some(ColorPropertyType::Red),
+            (2, RGB) => Some(ColorPropertyType::Green),
+            (3, RGB) => Some(ColorPropertyType::Blue),
+            (1, CMY) => Some(ColorPropertyType::Cyan),
+            (2, CMY) => Some(ColorPropertyType::Magenta),
+            (3, CMY) => Some(ColorPropertyType::Yellow),
+            (1, HSV) => Some(ColorPropertyType::Hue),
+            (2, HSV) => Some(ColorPropertyType::Saturation),
+            (3, HSV) => Some(ColorPropertyType::Value),
+            _ => None
+        }
+    }
 }
 
 impl ColorType {
@@ -88,7 +118,9 @@ impl ColorType {
 
 impl Color {
 
-    pub(crate) fn new(color_type: &ColorType, device_channel: u16) -> Result<Self, ChannelError> {
+    pub(crate) fn new(
+        color_type: &ColorType, device_channel: u16, universe: usize, fixture_name: &str
+    ) -> Result<Self, ChannelError> {
         let default_value = if color_type.output_type == Some(CMY) {
             u16::MAX
         } else if let Some(_) = color_type.output_type {
@@ -108,9 +140,38 @@ impl Color {
             .map(|c| Channel::new(c,default_value, device_channel))
             .transpose()?;
 
+        let output_type = color_type.output_type.unwrap();
+
+
+
+        if let Some(color) = &color1 {
+            color.reserve_pending(fixture_name, universe)?;
+        }
+        if let Some(color) = &color2 {
+            color.reserve_pending(fixture_name, universe)?;
+        }
+        if let Some(color) = &color3 {
+            color.reserve_pending(fixture_name, universe)?;
+        }
+
+        if let Some(color) = &color1 {
+            let property = PropertyType::Color(ColorPropertyType::new(1, output_type).unwrap());
+            color.reserve_final(fixture_name, universe, property);
+        }
+        if let Some(color) = &color2 {
+            let property = PropertyType::Color(ColorPropertyType::new(2, output_type).unwrap());
+            color.reserve_final(fixture_name, universe, property);
+        }
+        if let Some(color) = &color3 {
+            let property = PropertyType::Color(ColorPropertyType::new(3, output_type).unwrap());
+            color.reserve_final(fixture_name, universe, property);
+        }
+
+
+
 
         Ok(Self {
-            output_type: color_type.output_type.unwrap(),
+            output_type,
             color1,
             color2,
             color3,

@@ -1,8 +1,9 @@
 //#![allow(dead_code)]
 use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex};
-use crate::color::{Color, ColorType};
+use crate::color::{Color, ColorPropertyType, ColorType};
 use crate::fixture::ChannelReservation::{Empty, Pending, Reserved};
+use crate::fixture::PropertyType::Simple;
 
 pub struct FixtureList {
     pub fixture_types: HashMap<String, FixtureType>,
@@ -77,7 +78,7 @@ impl Channel {
             .ok_or(ChannelError::ChannelOutOfRange)
     }
 
-    fn reserve_pending(&self, fixture_name: &str, universe: usize) -> Result<(), ChannelError> {
+    pub(crate) fn reserve_pending(&self, fixture_name: &str, universe: usize) -> Result<(), ChannelError> {
         let mut dmx_config = DMX_CONFIGURATION.lock().expect("Failed to lock DMX_CONFIGURATION");
 
         //Since ensure_universe_count should have been executed before, this Error should never occur, therefore it
@@ -101,7 +102,7 @@ impl Channel {
         Ok(())
     }
 
-    fn reserve_final(&self, fixture_name: &str, universe: usize, property_type: PropertyType) {
+    pub(crate) fn reserve_final(&self, fixture_name: &str, universe: usize, property_type: PropertyType) {
         let mut dmx_config = DMX_CONFIGURATION.lock().expect("Failed to lock DMX_CONFIGURATION");
 
         //Since ensure_universe_count should have been executed before, this Error should never occur, therefore it
@@ -136,10 +137,10 @@ impl Channel {
         }
     }
 
-    fn get_default_value(property_type: PropertyType) -> u16 {
+    fn get_default_value(property_type: SimplePropertyType) -> u16 {
         match property_type {
-            PropertyType::Pan => u16::MAX/2,
-            PropertyType::Tilt => u16::MAX/2,
+            SimplePropertyType::Pan => u16::MAX/2,
+            SimplePropertyType::Tilt => u16::MAX/2,
             _ => 0
         }
     }
@@ -203,7 +204,7 @@ impl Channel {
 /// * **Other(String, Channel)**
 ///   Any manufacturer-specific or unsupported property, given as a descriptive name and channel index.
 #[derive(Hash,Eq,PartialEq,Clone)]
-enum PropertyType {
+enum SimplePropertyType {
     Dimmer,
     Strobe,
     Zoom,
@@ -226,17 +227,23 @@ enum PropertyType {
     Other(String),
 }
 
+#[derive(Clone)]
+pub enum PropertyType {
+    Simple(SimplePropertyType),
+    Color(ColorPropertyType),
+}
+
 
 pub struct FixtureType {
     color: Option<ColorType>,
-    properties: HashMap<PropertyType, (u16, Option<u16>)>,
+    properties: HashMap<SimplePropertyType, (u16, Option<u16>)>,
     name: String
 }
 
 pub struct Fixture {
     fixture_type: String,
     color: Option<Color>,
-    properties: HashMap<PropertyType, Channel>,
+    properties: HashMap<SimplePropertyType, Channel>,
     start_channel: u16,
     universe: usize,
     name: String,
@@ -252,7 +259,7 @@ impl FixtureType {
                 continue
             }
 
-            let property_type = PropertyType::from_string(&key)?;
+            let property_type = SimplePropertyType::from_string(&key)?;
             new_properties.insert(property_type, value);
         }
 
@@ -275,7 +282,7 @@ impl Fixture {
         ensure_universe_count(universe);
         let color = fixture_type.color.as_ref()
             .map(|c| {
-                Color::new(c, start_channel)
+                Color::new(c, start_channel, universe, &name)
             })
             .transpose()?;
 
@@ -286,10 +293,10 @@ impl Fixture {
                 let channel = Channel::new(*channel, default_value, start_channel)?;
                 channel.reserve_pending(&*name, universe)?;
                 Ok((property_type.clone(), channel))
-        }).collect::<Result<HashMap<PropertyType, Channel>,ChannelError>>()?;
+        }).collect::<Result<HashMap<SimplePropertyType, Channel>,ChannelError>>()?;
 
         properties.iter().for_each(|(property_type, channel)| {
-            channel.reserve_final(&*name, universe, property_type.clone());
+            channel.reserve_final(&*name, universe, Simple(property_type.clone()));
         });
 
         Ok(Self {
@@ -304,31 +311,31 @@ impl Fixture {
 
 }
 
-impl PropertyType {
-    fn from_string(s: &str) -> Result<PropertyType, ParseError> {
+impl SimplePropertyType {
+    fn from_string(s: &str) -> Result<SimplePropertyType, ParseError> {
         match s {
-            "dimmer" => Ok(PropertyType::Dimmer),
-            "strobe" => Ok(PropertyType::Strobe),
-            "zoom" => Ok(PropertyType::Zoom),
-            "focus" => Ok(PropertyType::Focus),
-            "frost" => Ok(PropertyType::Frost),
-            "prism" => Ok(PropertyType::Prism),
-            "prism-rotation" => Ok(PropertyType::PrismRotation),
-            "prism-index" => Ok(PropertyType::PrismIndexation),
-            "gobo" => Ok(PropertyType::GoboRotation),
-            "gobo-rotation" => Ok(PropertyType::GoboRotationSpeed),
-            "gobo-wheel-rotation" => Ok(PropertyType::GoboWheelRotation),
-            "gobo-wheel-speed" => Ok(PropertyType::GoboWheelRotationSpeed),
-            "pan" => Ok(PropertyType::Pan),
-            "tilt" => Ok(PropertyType::Tilt),
-            "fog-intensity" => Ok(PropertyType::FogIntensity),
-            "fog-fan-speed" => Ok(PropertyType::FogFanSpeed),
-            "shutter" => Ok(PropertyType::Shutter),
-            "uv" => Ok(PropertyType::UV),
-            "speed" => Ok(PropertyType::Speed),
+            "dimmer" => Ok(SimplePropertyType::Dimmer),
+            "strobe" => Ok(SimplePropertyType::Strobe),
+            "zoom" => Ok(SimplePropertyType::Zoom),
+            "focus" => Ok(SimplePropertyType::Focus),
+            "frost" => Ok(SimplePropertyType::Frost),
+            "prism" => Ok(SimplePropertyType::Prism),
+            "prism-rotation" => Ok(SimplePropertyType::PrismRotation),
+            "prism-index" => Ok(SimplePropertyType::PrismIndexation),
+            "gobo" => Ok(SimplePropertyType::GoboRotation),
+            "gobo-rotation" => Ok(SimplePropertyType::GoboRotationSpeed),
+            "gobo-wheel-rotation" => Ok(SimplePropertyType::GoboWheelRotation),
+            "gobo-wheel-speed" => Ok(SimplePropertyType::GoboWheelRotationSpeed),
+            "pan" => Ok(SimplePropertyType::Pan),
+            "tilt" => Ok(SimplePropertyType::Tilt),
+            "fog-intensity" => Ok(SimplePropertyType::FogIntensity),
+            "fog-fan-speed" => Ok(SimplePropertyType::FogFanSpeed),
+            "shutter" => Ok(SimplePropertyType::Shutter),
+            "uv" => Ok(SimplePropertyType::UV),
+            "speed" => Ok(SimplePropertyType::Speed),
             _ => {
                 if let Some(suffix) = s.strip_prefix("other_") {
-                    Ok(PropertyType::Other(suffix.to_string()))
+                    Ok(SimplePropertyType::Other(suffix.to_string()))
                 } else {
                     Err(ParseError::InvalidPropertyType(s.to_string()))
                 }
@@ -338,7 +345,7 @@ impl PropertyType {
 }
 
 #[derive(Clone)]
-enum ChannelReservation<T, U> {
+pub enum ChannelReservation<T, U> {
     Empty,
     Pending(T),
     Reserved(T, U),
