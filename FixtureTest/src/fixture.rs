@@ -342,6 +342,10 @@ impl Fixture {
         Ok(())
     }
 
+    pub fn get_fixture_type(&self) -> &str {
+        &self.fixture_type
+    }
+
 }
 
 impl SimplePropertyType {
