@@ -55,7 +55,7 @@ impl Channel {
         let channel = Self::checked_add(channel_numbers.0, device_channel)?;
         let fine_channel = if let Some(fine) = channel_numbers.1 {
             Some (
-                Self::checked_add(fine, default_value)?
+                Self::checked_add(fine, device_channel)?
             )
         } else {
             None
