@@ -32,7 +32,7 @@ enum OutputType {
     CMY
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum ColorPropertyType {
     Red,
     Green,
@@ -244,9 +244,9 @@ impl Color {
         self.green = green;
         self.blue = blue;
 
-        self.cyan = red - u16::MAX;
-        self.magenta = green - u16::MAX;
-        self.yellow = blue - u16::MAX;
+        self.cyan = u16::MAX - red;
+        self.magenta = u16::MAX - green;
+        self.yellow = u16::MAX - blue;
 
         let max = max(red, max(green, blue));
         let min = min(red, min(green, blue));
@@ -255,17 +255,17 @@ impl Color {
         self.saturation = if max == 0 {
             0
         } else {
-            (delta * u16::MAX) / max
+            ( (delta as f32 * u16::MAX as f32) / max as f32 ).round() as u16
         };
-        let mut hue: i32 = (u16::MAX as f32 / 6.0
+        let mut hue: i32 = (u16::MAX as f32 / 6.0_f32
             * (if delta == 0 {
                 0.0
             } else if max == red {
-                ((green - blue) as f32 / delta as f32) % 6.0
+                ((green as f32 - blue as f32) / delta as f32) % 6.0
             } else if max == green {
-                ((blue - red) as f32 / delta as f32) + 2.0
+                ((blue as f32 - red as f32) / delta as f32) + 2.0
             } else {
-                ((red - green) as f32 / delta as f32) + 4.0
+                ((red as f32 - green as f32) / delta as f32) + 4.0
             })) as i32;
 
         if hue < 0 {
