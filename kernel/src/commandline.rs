@@ -44,7 +44,7 @@ pub(crate) fn parse_command(line: String) {
         Some("type") if arg_count == 1 => {
             get_type(line_iter);
         }
-        
+
         Some("type") => {
             print!("Error: \"type\" needs a fixture as argument");
         }
@@ -227,15 +227,15 @@ fn set_value(mut args: SplitAsciiWhitespace) {
 fn get_type(mut args: SplitAsciiWhitespace) {
     let fixture_name = args.next().unwrap().to_string();
 
-    let mut list = fixture::FIXTURE_LIST.lock().unwrap();
+    let list = fixture::FIXTURE_LIST.lock().unwrap();
     if let None = list.fixtures.get(&fixture_name) {
         eprintln!("Error: \"{fixture_name}\" is not a valid Fixture");
         return;
     }
     let fixture = list.fixtures.get(&fixture_name).unwrap();
-    
+
     let fixture_type = fixture.get_fixture_type();
-    
+
     println!("\"{fixture_name}\" is a fixture of the type \"{fixture_type}\"");
 }
 
