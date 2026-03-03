@@ -18,7 +18,7 @@ impl FixtureList {
     }
 }
 
-static DMX_CONFIGURATION: LazyLock<Mutex<Vec<[ChannelReservation<String, PropertyType>; 512]>>> = LazyLock::new(||{
+pub static DMX_CONFIGURATION: LazyLock<Mutex<Vec<[ChannelReservation<String, PropertyType>; 512]>>> = LazyLock::new(||{
     Mutex::new(Vec::new())
 });
 
