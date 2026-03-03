@@ -46,8 +46,8 @@ pub(crate) fn parse_command(line: String) {
         }
 
         Some("break") => {
-            let universe = universe_count();
-            let guard = fixture::FIXTURE_LIST.lock().unwrap();
+            let _guard = fixture::FIXTURE_LIST.lock().unwrap();
+            let _dmx_config = fixture::DMX_CONFIGURATION.lock().unwrap();
             println!("Add a breakpoint at this point in the code to check the datastructures");
         }
 
