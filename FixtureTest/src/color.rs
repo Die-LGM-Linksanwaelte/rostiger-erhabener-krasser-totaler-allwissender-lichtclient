@@ -51,13 +51,47 @@ impl ColorPropertyType {
             (1, RGB) => Some(ColorPropertyType::Red),
             (2, RGB) => Some(ColorPropertyType::Green),
             (3, RGB) => Some(ColorPropertyType::Blue),
+
             (1, CMY) => Some(ColorPropertyType::Cyan),
             (2, CMY) => Some(ColorPropertyType::Magenta),
             (3, CMY) => Some(ColorPropertyType::Yellow),
+
             (1, HSV) => Some(ColorPropertyType::Hue),
             (2, HSV) => Some(ColorPropertyType::Saturation),
             (3, HSV) => Some(ColorPropertyType::Value),
+
             _ => None
+        }
+    }
+
+    fn to_output_type(&self) -> (u16, OutputType) {
+        match self {
+            ColorPropertyType::Red => (1, RGB),
+            ColorPropertyType::Green => (2, RGB),
+            ColorPropertyType::Blue => (3, RGB),
+
+            ColorPropertyType::Cyan => (1, CMY),
+            ColorPropertyType::Magenta => (2, CMY),
+            ColorPropertyType::Yellow => (3, CMY),
+
+            ColorPropertyType::Hue => (1, HSV),
+            ColorPropertyType::Saturation => (2, HSV),
+            ColorPropertyType::Value => (3, HSV),
+        }
+    }
+
+    pub fn from_string(property: &str) -> Result<ColorPropertyType, ParseError> {
+        match property {
+            "red" => Ok(ColorPropertyType::Red),
+            "green" => Ok(ColorPropertyType::Green),
+            "blue" => Ok(ColorPropertyType::Blue),
+            "cyan" => Ok(ColorPropertyType::Cyan),
+            "magenta" => Ok(ColorPropertyType::Magenta),
+            "yellow" => Ok(ColorPropertyType::Yellow),
+            "hue" => Ok(ColorPropertyType::Hue),
+            "saturation" => Ok(ColorPropertyType::Saturation),
+            "value" => Ok(ColorPropertyType::Value),
+            _ => Err(ParseError::InvalidPropertyType(property.to_string()))
         }
     }
 }
@@ -289,5 +323,35 @@ impl Color {
         self.yellow= self.blue - u16::MAX;
         
         self.set_color()
+    }
+
+    pub fn set(&mut self, property: ColorPropertyType, value: u16) {
+        let (color_number, output_type) = property.to_output_type();
+
+        let (mut value1, mut value2, mut value3) = match output_type {
+            RGB => (self.red, self.green, self.blue),
+            CMY => (self.cyan, self.magenta, self.yellow),
+            HSV => (self.hue, self.saturation, self.value),
+        };
+
+        match color_number {
+            1 => value1 = value,
+            2 => value2 = value,
+            3 => value3 = value,
+            _ => unreachable!(),
+        }
+
+        match output_type {
+            RGB => self.set_rgb(value1, value2, value3),
+            HSV => self.set_hsv(value1, value2, value3),
+            CMY => self.set_rgb(
+                u16::MAX - value1,
+                u16::MAX - value2,
+                u16::MAX - value3
+            ),
+        }
+
+
+
     }
 }
