@@ -3,7 +3,6 @@ use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex};
 use crate::color::{Color, ColorPropertyType, ColorType};
 use crate::fixture::ChannelReservation::{Empty, Pending, Reserved};
-use crate::fixture::PropertyType::Simple;
 
 pub struct FixtureList {
     pub fixture_types: HashMap<String, FixtureType>,
@@ -203,8 +202,8 @@ impl Channel {
 ///
 /// * **Other(String, Channel)**
 ///   Any manufacturer-specific or unsupported property, given as a descriptive name and channel index.
-#[derive(Hash,Eq,PartialEq,Clone)]
-enum SimplePropertyType {
+#[derive(Debug, Hash,Eq,PartialEq,Clone)]
+pub enum SimplePropertyType {
     Dimmer,
     Strobe,
     Zoom,
@@ -227,10 +226,22 @@ enum SimplePropertyType {
     Other(String),
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum PropertyType {
     Simple(SimplePropertyType),
     Color(ColorPropertyType),
+}
+
+impl PropertyType {
+    fn from_str(property_type: &str) -> Result<PropertyType,ParseError> {
+        if let Ok(property_type) = ColorPropertyType::from_string(property_type) {
+            Ok(PropertyType::Color(property_type))
+        } else if let Ok(property_type) = SimplePropertyType::from_string(property_type) {
+            Ok(PropertyType::Simple(property_type))
+        } else {
+            Err(ParseError::InvalidPropertyType(property_type.to_string()))
+        }
+    }
 }
 
 
@@ -296,7 +307,7 @@ impl Fixture {
         }).collect::<Result<HashMap<SimplePropertyType, Channel>,ChannelError>>()?;
 
         properties.iter().for_each(|(property_type, channel)| {
-            channel.reserve_final(&*name, universe, Simple(property_type.clone()));
+            channel.reserve_final(&*name, universe, PropertyType::Simple(property_type.clone()));
         });
 
         Ok(Self {
@@ -307,6 +318,28 @@ impl Fixture {
             universe,
             name,
         })
+    }
+
+
+    pub fn set(&mut self, property_type: &str, value: u16) -> Result<(), ParseError> {
+        let property_type= PropertyType::from_str(property_type)?;
+
+        if let PropertyType::Simple(property_type) = property_type {
+            let property = self.properties.get_mut(&property_type)
+                .ok_or(ParseError::MissingProperty(PropertyType::Simple(property_type)))?;
+
+            property.value = value;
+        } else if let PropertyType::Color(property_type) = property_type {
+            if let Some(color) = &mut self.color {
+                color.set(property_type, value);
+            } else {
+                return Err(ParseError::MissingProperty(PropertyType::Color(property_type)));
+            }
+        } else {
+            unreachable!()
+        }
+
+        Ok(())
     }
 
 }
@@ -355,6 +388,7 @@ pub enum ChannelReservation<T, U> {
 pub enum ParseError {
     InvalidPropertyType(String),
     MultipleColorOutputTypes(String),
+    MissingProperty(PropertyType),
 }
 
 #[derive(Debug)]

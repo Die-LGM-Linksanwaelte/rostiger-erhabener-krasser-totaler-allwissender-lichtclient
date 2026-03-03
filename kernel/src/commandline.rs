@@ -1,8 +1,8 @@
 use std::collections::{HashMap, HashSet};
 use std::str::SplitAsciiWhitespace;
 use FixtureTest::fixture;
-use FixtureTest::fixture::{universe_count, ChannelError, Fixture, FixtureType};
-use FixtureTest::fixture::ParseError::{InvalidPropertyType, MultipleColorOutputTypes};
+use FixtureTest::fixture::{ChannelError, Fixture, FixtureType};
+use FixtureTest::fixture::ParseError::{InvalidPropertyType, MultipleColorOutputTypes, MissingProperty};
 
 pub(crate) fn parse_command(line: String) {
 
@@ -33,8 +33,12 @@ pub(crate) fn parse_command(line: String) {
             println!("Error: \"add\" needs a name, a fixture-type, a start-channel and a universe as arguments")
         }
 
-        Some("set") => {
+        Some("set") if arg_count == 3 => {
+            set_value(line_iter);
+        }
 
+        Some("set") => {
+            println!("Error: \"set\" needs a fixture, a property, and a value as arguments")
         }
 
         Some("type") => {
@@ -185,4 +189,34 @@ fn new_fixture(mut args: SplitAsciiWhitespace) {
         }
     }
     
+}
+
+fn set_value(mut args: SplitAsciiWhitespace) {
+    let fixture_name = args.next().unwrap().to_string();
+    let property_name = args.next().unwrap().to_string();
+    let value = args.next().unwrap().to_string();
+
+    if let Err(_) = value.parse::<u16>() {
+        eprintln!("Error: \"{value}\" is not a valid value.");
+        return;
+    }
+    let value = value.parse::<u16>().unwrap();
+
+    let mut list = fixture::FIXTURE_LIST.lock().unwrap();
+    if let None = list.fixtures.get(&fixture_name) {
+        eprintln!("Error: \"{fixture_name}\" is not a valid Fixture");
+        return;
+    }
+    let fixture = list.fixtures.get_mut(&fixture_name).unwrap();
+
+    let result = fixture.set(&*property_name, value);
+
+    if let Err(InvalidPropertyType(property_type)) = result {
+        eprintln!("Error: \"{property_type}\" is not a valid PropertyType");
+    } else if let Err(MissingProperty(_)) = result {
+        eprintln!("Error: \"{fixture_name}\" has no property \"{property_name}\"")
+    } else if let Err(_) = result {
+        unreachable!();
+    }
+
 }
