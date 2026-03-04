@@ -26,7 +26,7 @@ pub fn universe_count() -> usize {
     DMX_CONFIGURATION.read().expect("Failed to lock DMX_CONFIGURATION").len()
 }
 
-pub fn ensure_universe_count(size: usize) {
+pub fn ensure_universes_size(size: usize) {
     if size > universe_count() {
         let mut config = DMX_CONFIGURATION.write().expect("Failed to write DMX_CONFIGURATION");
         config.resize_with(size, || {
@@ -82,7 +82,7 @@ impl Channel {
 
         //Since ensure_universe_count should have been executed before, this Error should never occur, therefore it
         // should panic
-        let universe = dmx_config.get_mut(universe - 1)
+        let universe = dmx_config.get_mut(universe)
             .ok_or(ChannelError::UniverseOutOfRange).expect("Universe out of range");
 
         if let Reserved(existing,_) = universe[self.channel as usize].clone() {
@@ -106,7 +106,7 @@ impl Channel {
 
         //Since ensure_universe_count should have been executed before, this Error should never occur, therefore it
         // should panic
-        let universe = dmx_config.get_mut(universe - 1)
+        let universe = dmx_config.get_mut(universe)
             .ok_or(ChannelError::UniverseOutOfRange).expect("Universe out of range.");
 
         if let Pending(existing) = universe[self.channel as usize].clone() {
@@ -303,7 +303,7 @@ impl FixtureType {
 
 impl Fixture {
     pub fn new(fixture_type: &FixtureType, start_channel:u16, universe: usize, name:String) -> Result<Self, ChannelError> {
-        ensure_universe_count(universe);
+        ensure_universes_size(universe + 1);
         let color = fixture_type.color.as_ref()
             .map(|c| {
                 Color::new(c, start_channel, universe, &name)
