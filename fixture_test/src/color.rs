@@ -354,4 +354,33 @@ impl Color {
 
 
     }
+
+    pub fn get_values(&self) -> Vec<(u16, u8)> {
+        let mut output = Vec::new();
+
+        if let Some(c) = self.color1.as_ref() {
+            output.push(c.get_value());
+            if let Some(fine_value) = c.get_fine_value() {
+                output.push(fine_value);
+            }
+        }
+
+        if let Some(c) = self.color2.as_ref() {
+            output.push(c.get_value());
+            if let Some(fine_value) = c.get_fine_value() {
+                output.push(fine_value);
+            }
+        }
+
+        if let Some(c) = self.color3.as_ref() {
+            output.push(c.get_value());
+            if let Some(fine_value) = c.get_fine_value() {
+                output.push(fine_value);
+            }
+        }
+
+
+        output
+
+    }
 }
