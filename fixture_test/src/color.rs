@@ -282,45 +282,28 @@ impl Color {
         self.saturation = saturation;
         self.value = value;
         //Achtung: es folgt eine unstetige Kackfunktion
-        let c = value * saturation;
+        let c = (value as f32 * (saturation as f32 / u16::MAX as f32)).round() as u16;
+        let m = value.saturating_sub(c);
         let h = hue as f32 / (u16::MAX as f32 / 6f32);
-        let x = c as f32 * (1.0 - ((h % 2.0) - 1.0).abs());
-        match h {
-            n if n < 1.0 => {
-                self.red = c;
-                self.green = x as u16;
-                self.blue = 0;
-            }
-            n if n >= 1.0 && n < 2.0 => {
-                self.red = x as u16;
-                self.green = c;
-                self.blue = 0;
-            }
-            n if n >= 2.0 && n < 3.0 => {
-                self.red = 0;
-                self.green = c;
-                self.blue = x as u16;
-            }
-            n if n >= 3.0 && n < 4.0 => {
-                self.red = 0;
-                self.green = x as u16;
-                self.blue = c;
-            }
-            n if n >= 4.0 && n < 5.0 => {
-                self.red = x as u16;
-                self.green = 0;
-                self.blue = c;
-            }
-            n if n >= 5.0 && n < 6.0 => {
-                self.red = c;
-                self.green = 0;
-                self.blue = x as u16;
-            }
-            _ => {}
-        }
-        self.cyan = self.red - u16::MAX;
-        self.magenta = self.green - u16::MAX;
-        self.yellow= self.blue - u16::MAX;
+        let x = ( c as f32 * (1.0 - ((h % 2.0) - 1.0).abs()) ).round() as u16;
+
+        let (r, g, b) = match h {
+            n if n < 1.0 => (c, x, 0),
+            n if n < 2.0 => (x, c, 0),
+            n if n < 3.0 => (0, c, x),
+            n if n < 4.0 => (0, x, c),
+            n if n < 5.0 => (x, 0, c),
+            n if n < 6.0 => (c, 0, x),
+            _ => (0, 0, 0)
+        };
+
+        self.red = r.saturating_add(m);
+        self.green = g.saturating_add(m);
+        self.blue = b.saturating_add(m);
+
+        self.cyan = u16::MAX - self.red;
+        self.magenta = u16::MAX - self.green;
+        self.yellow= u16::MAX - self.blue;
         
         self.set_color()
     }
