@@ -1,6 +1,6 @@
 //#![allow(dead_code)]
 use std::collections::HashMap;
-use std::sync::{LazyLock, Mutex};
+use std::sync::{LazyLock, RwLock};
 use crate::color::{Color, ColorPropertyType, ColorType};
 use crate::fixture::ChannelReservation::{Empty, Pending, Reserved};
 
@@ -18,25 +18,25 @@ impl FixtureList {
     }
 }
 
-pub static DMX_CONFIGURATION: LazyLock<Mutex<Vec<[ChannelReservation<String, PropertyType>; 512]>>> = LazyLock::new(||{
-    Mutex::new(Vec::new())
+pub static DMX_CONFIGURATION: LazyLock<RwLock<Vec<[ChannelReservation<String, PropertyType>; 512]>>> = LazyLock::new(||{
+    RwLock::new(Vec::new())
 });
 
 pub fn universe_count() -> usize {
-    DMX_CONFIGURATION.lock().expect("Failed to lock DMX_CONFIGURATION").len()
+    DMX_CONFIGURATION.read().expect("Failed to lock DMX_CONFIGURATION").len()
 }
 
 pub fn ensure_universe_count(size: usize) {
     if size > universe_count() {
-        let mut config = DMX_CONFIGURATION.lock().expect("Failed to lock DMX_CONFIGURATION");
+        let mut config = DMX_CONFIGURATION.write().expect("Failed to write DMX_CONFIGURATION");
         config.resize_with(size, || {
             std::array::from_fn(|_| Empty)
         })
     }
 }
 
-pub static FIXTURE_LIST: LazyLock<Mutex<FixtureList>> = LazyLock::new(|| {
-    Mutex::new(FixtureList::new())
+pub static FIXTURE_LIST: LazyLock<RwLock<FixtureList>> = LazyLock::new(|| {
+    RwLock::new(FixtureList::new())
 });
 
 pub(crate) struct Channel{
@@ -78,7 +78,7 @@ impl Channel {
     }
 
     pub(crate) fn reserve_pending(&self, fixture_name: &str, universe: usize) -> Result<(), ChannelError> {
-        let mut dmx_config = DMX_CONFIGURATION.lock().expect("Failed to lock DMX_CONFIGURATION");
+        let mut dmx_config = DMX_CONFIGURATION.write().expect("Failed to write DMX_CONFIGURATION");
 
         //Since ensure_universe_count should have been executed before, this Error should never occur, therefore it
         // should panic
@@ -102,7 +102,7 @@ impl Channel {
     }
 
     pub(crate) fn reserve_final(&self, fixture_name: &str, universe: usize, property_type: PropertyType) {
-        let mut dmx_config = DMX_CONFIGURATION.lock().expect("Failed to lock DMX_CONFIGURATION");
+        let mut dmx_config = DMX_CONFIGURATION.write().expect("Failed to write DMX_CONFIGURATION");
 
         //Since ensure_universe_count should have been executed before, this Error should never occur, therefore it
         // should panic
@@ -259,6 +259,7 @@ pub struct Fixture {
     universe: usize,
     name: String,
 }
+
 
 impl FixtureType {
     pub fn new(name: String, properties: HashMap<String, (u16, Option<u16>)>) -> Result<Self, ParseError> {
