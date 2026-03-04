@@ -9,12 +9,16 @@ version = "0.1.1"
 [[package]]
 name = "artnet_test"
 version = "0.1.0"
+dependencies = [
+ "FixtureTest",
+]
 
 [[package]]
 name = "kernel"
 version = "0.1.1"
 dependencies = [
  "FixtureTest",
+ "artnet_test",
 ]
 
 [[package]]

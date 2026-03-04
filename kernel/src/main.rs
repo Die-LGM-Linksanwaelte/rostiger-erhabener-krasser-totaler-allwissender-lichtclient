@@ -1,11 +1,18 @@
 use std::io::{self, Write};
+use artnet_test::artnet::artnet_loop;
 
 mod commandline;
 
-fn main() {
+fn main() -> io::Result<()> {
+
+    let artnet_handle = std::thread::spawn(|| {
+        artnet_loop().expect("artnet loop failed");
+    });
+
+
     loop {
         print!("> ");
-        io::stdout().flush().unwrap();
+        io::stdout().flush()?;
 
         let mut input = String::new();
         io::stdin().read_line(&mut input).expect("Failed to read line");
@@ -14,5 +21,7 @@ fn main() {
 
         commandline::parse_command(input);
     }
+
+    artnet_handle.join().unwrap();
     println!("Hello, world!");
 }

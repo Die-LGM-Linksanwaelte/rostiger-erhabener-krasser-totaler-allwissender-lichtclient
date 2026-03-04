@@ -136,6 +136,18 @@ impl Channel {
         }
     }
 
+    pub fn get_value(&self) -> (u16, u8) {
+        (self.channel, self.value.to_be_bytes()[0])
+    }
+
+    pub fn get_fine_value(&self) -> Option<(u16, u8)> {
+        if let Some(fine_channel) = self.fine_channel {
+            Some((fine_channel, self.value.to_be_bytes()[1]))
+        } else {
+            None
+        }
+    }
+
     fn get_default_value(property_type: SimplePropertyType) -> u16 {
         match property_type {
             SimplePropertyType::Pan => u16::MAX/2,
@@ -341,6 +353,27 @@ impl Fixture {
         }
 
         Ok(())
+    }
+
+    pub fn get_channel_values(&self) -> Vec<(u16, u8)> {
+        let mut output = Vec::new(); //vec![(0u16,0u8);self.properties.len()];
+
+        self.properties.iter().for_each(|(_, channel)| {
+            output.push(channel.get_value());
+            if let Some(fine_value) = channel.get_fine_value() {
+                output.push(fine_value);
+            }
+        });
+
+        if let Some(color) = self.color.as_ref() {
+            output.append(&mut color.get_values())
+        }
+
+        output
+    }
+
+    pub fn get_universe(&self) -> usize {
+        self.universe
     }
 
     pub fn get_fixture_type(&self) -> &str {
