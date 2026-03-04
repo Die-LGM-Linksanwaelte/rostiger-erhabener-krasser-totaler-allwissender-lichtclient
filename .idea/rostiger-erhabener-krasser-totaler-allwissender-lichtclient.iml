@@ -6,7 +6,7 @@
       <sourceFolder url="file://$MODULE_DIR$/rektal/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/artnet_test/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/kernel/src" isTestSource="false" />
-      <sourceFolder url="file://$MODULE_DIR$/FixtureTest/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/fixture_test/src" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/rektal-launcher/target" />
       <excludeFolder url="file://$MODULE_DIR$/rektal/target" />
       <excludeFolder url="file://$MODULE_DIR$/target" />
