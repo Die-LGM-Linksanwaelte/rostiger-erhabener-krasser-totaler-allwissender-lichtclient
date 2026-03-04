@@ -50,8 +50,9 @@ pub(crate) fn parse_command(line: String) {
         }
 
         Some("break") => {
-            let _guard = fixture::FIXTURE_LIST.lock().unwrap();
-            let _dmx_config = fixture::DMX_CONFIGURATION.lock().unwrap();
+            let _guard = fixture::FIXTURE_LIST.read().unwrap();
+            let _dmx_config = fixture::DMX_CONFIGURATION.read().unwrap();
+            let _universes = artnet_test::artnet::calculate_dmx_values();
             println!("Add a breakpoint at this point in the code to check the datastructures");
         }
 
@@ -115,7 +116,7 @@ fn new_fixture_type(mut args: SplitAsciiWhitespace) {
         }
 
     }
-    let mut list = fixture::FIXTURE_LIST.lock().unwrap();
+    let mut list = fixture::FIXTURE_LIST.write().unwrap();
     let fixture_type = FixtureType::new(name.clone(), properties);
     if let Ok(fixture_type) = fixture_type {
         match list.fixture_types.entry(name.clone()) {
@@ -161,7 +162,7 @@ fn new_fixture(mut args: SplitAsciiWhitespace) {
         return;
     }
     
-    let mut list = fixture::FIXTURE_LIST.lock().unwrap();
+    let mut list = fixture::FIXTURE_LIST.write().unwrap();
     if let None = list.fixture_types.get(&fixture_type_name) {
         eprintln!("Error: \"{fixture_type_name}\" is not a valid FixtureType");
         return;
@@ -206,7 +207,7 @@ fn set_value(mut args: SplitAsciiWhitespace) {
     }
     let value = value.parse::<u16>().unwrap();
 
-    let mut list = fixture::FIXTURE_LIST.lock().unwrap();
+    let mut list = fixture::FIXTURE_LIST.write().unwrap();
     if let None = list.fixtures.get(&fixture_name) {
         eprintln!("Error: \"{fixture_name}\" is not a valid Fixture");
         return;
@@ -227,7 +228,7 @@ fn set_value(mut args: SplitAsciiWhitespace) {
 fn get_type(mut args: SplitAsciiWhitespace) {
     let fixture_name = args.next().unwrap().to_string();
 
-    let list = fixture::FIXTURE_LIST.lock().unwrap();
+    let list = fixture::FIXTURE_LIST.read().unwrap();
     if let None = list.fixtures.get(&fixture_name) {
         eprintln!("Error: \"{fixture_name}\" is not a valid Fixture");
         return;
