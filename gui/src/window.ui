@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<interface>
+  <object class="AdwApplicationWindow" id="window">
+    <property name="title">Proper Libpanel App</property>
+    <property name="default-width">1000</property>
+    <property name="default-height">700</property>
+    <property name="content">
+      <object class="GtkBox">
+        <property name="orientation">vertical</property>
+        <child>
+          <object class="AdwHeaderBar" />
+        </child>
+        <child>
+          <object class="PanelDock" id="dock">
+            <property name="vexpand">true</property>
+            <property name="hexpand">true</property>
+
+            <child>
+              <object class="PanelGrid" id="center_grid">
+
+
+                <child>
+                  <object class="PanelFrame" id="center_frame" />
+                </child>
+              </object>
+            </child>
+
+            <child type="start">
+              <object class="PanelFrame" id="left_frame">
+                <property name="width-request">200</property>
+              </object>
+            </child>
+
+            <child type="end">
+              <object class="PanelFrame" id="right_frame">
+                <property name="width-request">200</property>
+              </object>
+            </child>
+
+            <child type="bottom">
+              <object class="PanelFrame" id="bottom_frame">
+                <property name="height-request">150</property>
+              </object>
+            </child>
+
+            <child type="top">
+              <object class="PanelFrame" id="top_frame">
+                <property name="height-request">100</property>
+              </object>
+            </child>
+          </object>
+        </child>
+      </object>
+    </property>
+  </object>
+</interface>

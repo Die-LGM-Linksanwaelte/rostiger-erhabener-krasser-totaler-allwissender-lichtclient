@@ -1,6 +1,9 @@
 [package]
 name = "gui"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 
 [dependencies]
+gtk = { package = "gtk4", version = "0.10" }
+libadwaita = "0.8"
+libpanel = "0.6"
