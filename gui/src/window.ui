@@ -17,8 +17,6 @@
 
             <child>
               <object class="PanelGrid" id="center_grid">
-
-
                 <child>
                   <object class="PanelFrame" id="center_frame" />
                 </child>
