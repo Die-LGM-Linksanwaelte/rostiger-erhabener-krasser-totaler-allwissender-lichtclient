@@ -3,22 +3,22 @@
 version = 4
 
 [[package]]
-name = "FixtureTest"
+name = "Common"
 version = "0.1.1"
 
 [[package]]
-name = "artnet_test"
+name = "Interface"
 version = "0.1.0"
 dependencies = [
- "FixtureTest",
+ "Common",
 ]
 
 [[package]]
 name = "kernel"
 version = "0.1.1"
 dependencies = [
- "FixtureTest",
- "artnet_test",
+ "Common",
+ "Interface",
 ]
 
 [[package]]

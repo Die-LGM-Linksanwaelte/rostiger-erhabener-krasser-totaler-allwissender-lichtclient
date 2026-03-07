@@ -3,5 +3,5 @@
 version = 4
 
 [[package]]
-name = "FixtureTest"
+name = "Common"
 version = "0.1.0"
