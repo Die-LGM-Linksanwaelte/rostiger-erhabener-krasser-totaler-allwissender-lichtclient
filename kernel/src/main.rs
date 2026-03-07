@@ -1,5 +1,5 @@
 use std::io::{self, Write};
-use artnet_test::artnet::artnet_loop;
+use Interface::interfaces::artnet_loop;
 
 mod commandline;
 

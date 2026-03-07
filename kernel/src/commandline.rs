@@ -1,8 +1,8 @@
 use std::collections::{HashMap, HashSet};
 use std::str::SplitAsciiWhitespace;
-use FixtureTest::fixture;
-use FixtureTest::fixture::{ChannelError, Fixture, FixtureType};
-use FixtureTest::fixture::ParseError::{InvalidPropertyType, MultipleColorOutputTypes, MissingProperty};
+use Common::fixture;
+use Common::fixture::{ChannelError, Fixture, FixtureType};
+use Common::fixture::ParseError::{InvalidPropertyType, MultipleColorOutputTypes, MissingProperty};
 
 pub(crate) fn parse_command(line: String) {
 
@@ -49,10 +49,35 @@ pub(crate) fn parse_command(line: String) {
             print!("Error: \"type\" needs a fixture as argument");
         }
 
+        Some("create_debug") => {
+            let args = "rgb red 0 green 1 blue 2".split_ascii_whitespace();
+            new_fixture_type(args);
+            for i in 0..50 {
+                let name = i.to_string();
+                let start_channel = (i * 3).to_string();
+                let args = format!("{} rgb 0 {}", name.clone(), start_channel.clone());
+                let args = args.split_ascii_whitespace();
+                new_fixture(args);
+            }
+        }
+
+        Some("set_all") if arg_count == 2 => {
+            let property_type = line_iter.next().unwrap().to_string();
+            let value = line_iter.next().unwrap().to_string();
+
+            for i in 0..50 {
+                let name = i.to_string();
+                let args = format!("{} {} {}", name, property_type.clone(), value.clone());
+                let args = args.split_ascii_whitespace();
+                set_value(args);
+
+            }
+        }
+
         Some("break") => {
             let _guard = fixture::FIXTURE_LIST.read().unwrap();
             let _dmx_config = fixture::DMX_CONFIGURATION.read().unwrap();
-            let _universes = artnet_test::artnet::calculate_dmx_values();
+            let _universes = Interface::interfaces::calculate_dmx_values();
             println!("Add a breakpoint at this point in the code to check the datastructures");
         }
 

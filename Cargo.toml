@@ -4,5 +4,5 @@ resolver = "1"
 members = [
     "rektal",
     "kernel",
-    "artnet_test",
-    "fixture_test"]
+    "Interface",
+    "Common"]
