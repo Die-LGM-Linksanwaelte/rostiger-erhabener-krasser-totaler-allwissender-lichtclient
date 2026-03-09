@@ -1,11 +1,11 @@
-use std::net::UdpSocket;
-use std::io;
-use std::thread::sleep;
-use std::time::{Duration, Instant};
 use FixtureTest::fixture;
 use FixtureTest::fixture::universe_count;
+use std::io;
+use std::net::UdpSocket;
+use std::thread::sleep;
+use std::time::{Duration, Instant};
 
-const FIXTURES: usize = 1;//80;
+const FIXTURES: usize = 1; //80;
 const CHANNELS: usize = 512;
 const TARGET: &str = "255.255.255.255:6454";
 const FREQUENCY: u64 = 23;
@@ -16,7 +16,6 @@ pub fn artnet_loop() -> io::Result<()> {
 
     let mut sequence: u8 = 0;
     println!("Starting artnet");
-
 
     loop {
         let start = Instant::now();
@@ -33,12 +32,10 @@ pub fn artnet_loop() -> io::Result<()> {
         if elapsed < Duration::from_millis(FREQUENCY) {
             sleep(Duration::from_millis(FREQUENCY) - elapsed);
         }
-
-
     }
 }
 
-pub fn calculate_dmx_values() -> Vec<[u8;CHANNELS]>{
+pub fn calculate_dmx_values() -> Vec<[u8; CHANNELS]> {
     let universe_count = universe_count();
 
     let mut universes = vec![[0u8; CHANNELS]; universe_count];
@@ -53,14 +50,15 @@ pub fn calculate_dmx_values() -> Vec<[u8;CHANNELS]>{
             .iter()
             .for_each(|(channel, value)| {
                 *universes
-                    .get_mut(universe).unwrap()
-                    .get_mut(*channel as usize).unwrap() = *value;
+                    .get_mut(universe)
+                    .unwrap()
+                    .get_mut(*channel as usize)
+                    .unwrap() = *value;
             });
     });
 
     universes
 }
-
 
 fn send_artnet_universe(
     socket: &UdpSocket,
@@ -133,19 +131,21 @@ pub fn main() -> std::io::Result<()> {
     }
 }
 
-fn send_artnet(socket: &UdpSocket, target: &str, dmx: &[u8; 512], universe_id: u16) -> io::Result<()> {
+fn send_artnet(
+    socket: &UdpSocket,
+    target: &str,
+    dmx: &[u8; 512],
+    universe_id: u16,
+) -> io::Result<()> {
     let mut packet = Vec::with_capacity(18 + CHANNELS);
 
     packet.extend_from_slice(b"Art-Net\0");
     packet.extend_from_slice(&[0x00, 0x50]); // ArtDMX
-    packet.extend_from_slice(&[0x00, 14]);   // Protocol version
+    packet.extend_from_slice(&[0x00, 14]); // Protocol version
     packet.extend_from_slice(&[0x00, 0x00]); // Sequence + Physical
     packet.extend_from_slice(&universe_id.to_le_bytes()); // Universe 0
 
-    packet.extend_from_slice(&[
-        (CHANNELS >> 8) as u8,
-        (CHANNELS & 0xFF) as u8,
-    ]);
+    packet.extend_from_slice(&[(CHANNELS >> 8) as u8, (CHANNELS & 0xFF) as u8]);
 
     packet.extend_from_slice(dmx);
 

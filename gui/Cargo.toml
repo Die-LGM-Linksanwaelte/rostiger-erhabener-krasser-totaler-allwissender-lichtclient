@@ -1,9 +1,8 @@
 [package]
-name = "gui"
+name = "mein_docking_app"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-gtk = { package = "gtk4", version = "0.10" }
-libadwaita = "0.8"
-libpanel = "0.6"
+eframe = "0.28"
+egui_dock = "0.13"
