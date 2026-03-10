@@ -39,10 +39,10 @@ pub static FIXTURE_LIST: LazyLock<RwLock<FixtureList>> = LazyLock::new(|| {
     RwLock::new(FixtureList::new())
 });
 
-pub(crate) struct Channel{
-    pub(crate) value: u16,
-    channel : u16,
-    fine_channel: Option<u16>,
+pub struct Channel {
+    pub value: u16,
+    pub channel: u16,
+    pub fine_channel: Option<u16>,
 }
 
 impl Channel {
@@ -264,12 +264,12 @@ pub struct FixtureType {
 }
 
 pub struct Fixture {
-    fixture_type: String,
-    color: Option<Color>,
-    properties: HashMap<SimplePropertyType, Channel>,
-    start_channel: u16,
-    universe: usize,
-    name: String,
+    pub fixture_type: String,
+    pub color: Option<Color>,
+    pub properties: HashMap<SimplePropertyType, Channel>,
+    pub start_channel: u16,
+    pub universe: usize,
+    pub name: String,
 }
 
 

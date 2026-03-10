@@ -1,8 +1,9 @@
 [package]
-name = "mein_docking_app"
+name = "gui"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
 eframe = "0.28"
 egui_dock = "0.13"
+FixtureTest = { path = "../fixture_test" }
