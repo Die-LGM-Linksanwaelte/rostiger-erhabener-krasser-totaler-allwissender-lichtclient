@@ -1,6 +1,7 @@
 use std::io;
 use std::net::UdpSocket;
-use crate::interfaces::{DmxInterface, CHANNELS};
+use crate::interfaces::DmxInterface;
+use Common::fixture::MAX_CHANNEL;
 
 pub(crate) struct ArtnetInterface {
     socket: UdpSocket,
@@ -16,8 +17,8 @@ impl ArtnetInterface {
 }
 
 impl DmxInterface for ArtnetInterface {
-    fn send_universe(&self, local_universe_index: u16, data: &[u8;512]) -> io::Result<()> {
-        let mut packet = Vec::with_capacity(18 + CHANNELS);
+    fn send_universe(&self, local_universe_index: u16, data: &[u8;MAX_CHANNEL as usize]) -> io::Result<()> {
+        let mut packet = Vec::with_capacity(18 + MAX_CHANNEL as usize);
 
         // Art-Net ID
         packet.extend_from_slice(b"Art-Net\0");
@@ -36,9 +37,9 @@ impl DmxInterface for ArtnetInterface {
         packet.extend_from_slice(&local_universe_index.to_le_bytes());
 
         // Length (big endian)
-        packet.extend_from_slice(&(CHANNELS as u16).to_be_bytes());
+        packet.extend_from_slice(&MAX_CHANNEL.to_be_bytes());
 
-        // DMX Daten
+        // DMX Data
         packet.extend_from_slice(data);
 
         self.socket.send_to(&packet, self.target.clone())?;

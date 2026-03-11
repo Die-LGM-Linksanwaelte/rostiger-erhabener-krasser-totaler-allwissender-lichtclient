@@ -145,7 +145,7 @@ fn new_fixture_type(mut args: SplitAsciiWhitespace) {
         },
 
         Err(ChannelError(ChannelOutOfRange)) => {
-            eprintln!("Error: A Channel is higher than 512. This is not yet supported");
+            eprintln!("Error: A Channel is higher than the size of the Universe. This is not yet supported");
         }
 
         Err(FixtureTypeNameAlreadyInUse(name)) => {
