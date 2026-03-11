@@ -1,6 +1,6 @@
 use std::cmp::{max, min, PartialEq};
 use crate::color::OutputType::{CMY, HSV, RGB};
-use crate::fixture::{Channel, ChannelError, ParseError, PropertyType};
+use crate::fixture::{Channel, ChannelError, FixtureError, PropertyType};
 
 ///Struct defining a color
 pub struct Color {
@@ -80,7 +80,7 @@ impl ColorPropertyType {
         }
     }
 
-    pub fn from_string(property: &str) -> Result<ColorPropertyType, ParseError> {
+    pub fn from_string(property: &str) -> Result<ColorPropertyType, FixtureError> {
         match property {
             "red" => Ok(ColorPropertyType::Red),
             "green" => Ok(ColorPropertyType::Green),
@@ -91,7 +91,7 @@ impl ColorPropertyType {
             "hue" => Ok(ColorPropertyType::Hue),
             "saturation" => Ok(ColorPropertyType::Saturation),
             "value" => Ok(ColorPropertyType::Value),
-            _ => Err(ParseError::InvalidPropertyType(property.to_string()))
+            _ => Err(FixtureError::InvalidPropertyType(property.to_string()))
         }
     }
 }
@@ -106,7 +106,7 @@ impl ColorType {
         }
     }
 
-    pub(crate) fn parse(&mut self, s: String, value: (u16, Option<u16>)) -> Result<bool, ParseError> {
+    pub(crate) fn parse(&mut self, s: String, value: (u16, Option<u16>)) -> Result<bool, FixtureError> {
         let (new_type, slot) = match s.as_str() {
             "red"        => (RGB, 1),
             "green"      => (RGB, 2),
@@ -125,7 +125,7 @@ impl ColorType {
 
         if let Some(old_type) = self.output_type {
             if old_type != new_type {
-                return Err(ParseError::MultipleColorOutputTypes(
+                return Err(FixtureError::MultipleColorOutputTypes(
                    format!("{s} is incompatible with {:?}", old_type)
                 ));
             }

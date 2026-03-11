@@ -1,8 +1,9 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap ;
 use std::str::SplitAsciiWhitespace;
 use Common::fixture;
-use Common::fixture::{ChannelError, Fixture, FixtureType};
-use Common::fixture::ParseError::{InvalidPropertyType, MultipleColorOutputTypes, MissingProperty};
+use Common::fixture::{Fixture, FixtureType};
+use Common::fixture::ChannelError::{ChannelOutOfRange, ChannelAlreadyInUse, UniverseOutOfRange};
+use Common::fixture::FixtureError::{InvalidPropertyType, MultipleColorOutputTypes, MissingProperty, FixtureTypeNameAlreadyInUse, ChannelError, InvalidFixtureType, FixtureNameAlreadyInUse, InvalidFixture};
 
 pub(crate) fn parse_command(line: String) {
 
@@ -90,8 +91,10 @@ pub(crate) fn parse_command(line: String) {
 fn new_fixture_type(mut args: SplitAsciiWhitespace) {
     let name = args.next().unwrap().to_string();
     let mut properties: HashMap<String, (u16, Option<u16>)> = HashMap::new();
-    let mut seen_channels = HashSet::new();
 
+    //*******************************************
+    //***Parsing the input to the right Format***
+    //*******************************************
     while let Some(property) = args.next() {
 
         //We can do that without throwing an Error, because args has an even number of elements at this point
@@ -101,16 +104,6 @@ fn new_fixture_type(mut args: SplitAsciiWhitespace) {
             return;
         } else {
             let channel = channel.parse::<u16>().unwrap();
-
-            if channel > 511 {
-                eprintln!("Error: \"{channel}\" is out of range");
-                return;
-            }
-
-            if !seen_channels.insert(channel) {
-                eprintln!("Error: Channel \"{channel}\" has multiple properties bound to it.");
-                return;
-            }
 
             if property.ends_with("_f") {
                 //fine-channels
@@ -141,26 +134,40 @@ fn new_fixture_type(mut args: SplitAsciiWhitespace) {
         }
 
     }
-    let mut list = fixture::FIXTURE_LIST.write().unwrap();
+
+    //***********************************************************
+    //**Creating the fixture_type and handling possible Errors***
+    //***********************************************************
     let fixture_type = FixtureType::new(name.clone(), properties);
-    if let Ok(fixture_type) = fixture_type {
-        match list.fixture_types.entry(name.clone()) {
-            std::collections::hash_map::Entry::Occupied(_) => {
-                eprintln!("Error: \"{name}\" already exists");
-            }
-            std::collections::hash_map::Entry::Vacant(entry) => {
-                entry.insert(fixture_type);
-            }
+    match fixture_type {
+        Err(ChannelError(ChannelAlreadyInUse(channel_type))) => {
+            eprintln!("Error: The channel {channel_type} overlaps with another channel.");
+        },
+
+        Err(ChannelError(ChannelOutOfRange)) => {
+            eprintln!("Error: A Channel is higher than 512. This is not yet supported");
         }
-    } else if let Err(fixture_type) = fixture_type {
-        if let InvalidPropertyType(fixture_type) = fixture_type {
-            eprintln!("Error: \"{fixture_type}\" is not a valid FixtureType");
-        } else if let MultipleColorOutputTypes(error_message) = fixture_type {
+
+        Err(FixtureTypeNameAlreadyInUse(name)) => {
+            eprintln!("Error: The Fixture type name {name} is already used.");
+        }
+
+        Err(InvalidPropertyType(property_type)) => {
+            eprintln!("Error: \"{property_type}\" is not a valid PropertyType");
+        }
+
+        Err(MultipleColorOutputTypes(error_message)) => {
             eprintln!("{error_message}");
-        } else { 
-            unreachable!();
         }
-        return;
+
+        Err(_) => {
+            eprintln!("Error: new_fixture_type() threw an Error it shouldn't");
+            None::<Fixture>.unwrap();
+            // Mir ist langweilig, deswegen crashe ich hier, auf die lustigste und verwirrendste Art. Hier muss auch
+            // gecrashed werden, weil das nie passieren sollte
+        }
+
+        Ok(()) => { println!("{} created successfully", name); }
     }
 }
 
@@ -169,7 +176,10 @@ fn new_fixture(mut args: SplitAsciiWhitespace) {
     let fixture_type_name = args.next().unwrap().to_string();
     let universe = args.next().unwrap().to_string();
     let channel = args.next().unwrap().to_string();
-    
+
+    //*******************************************
+    //***Parsing the input to the right Format***
+    //*******************************************
     if let Err(_) = channel.parse::<u16>() {
         eprintln!("Error: \"{fixture_type_name}\" is not a valid channel-number");
         return;
@@ -182,43 +192,42 @@ fn new_fixture(mut args: SplitAsciiWhitespace) {
     }
     let universe = universe.parse().unwrap();
 
-    if channel > 511 {
-        eprintln!("Error: \"{channel}\" is out of range");
-        return;
-    }
-    
-    let mut list = fixture::FIXTURE_LIST.write().unwrap();
-    if let None = list.fixture_types.get(&fixture_type_name) {
-        eprintln!("Error: \"{fixture_type_name}\" is not a valid FixtureType");
-        return;
-    }
-    let fixture_type= list.fixture_types.get(&fixture_type_name).unwrap();
+    //******************************************************
+    //**Creating the fixture and handling possible Errors***
+    //******************************************************
+    let fixture = Fixture::new(fixture_type_name,channel,universe, name.clone());
+    match fixture {
+        Err(ChannelError(ChannelOutOfRange)) => {
+            eprintln!("Error: fixture overflowes out of this remaining universe");
+        }
 
-    let fixture = Fixture::new(
-        fixture_type,channel,universe, name.clone()
-    );
-
-    if let Err(ChannelError::ChannelOutOfRange) = fixture {
-        eprintln!("Error: fixture is too big to fit into this remaining universe");
-        return;
-    } else if let Err(ChannelError::UniverseOutOfRange) = fixture {
-        panic!("Fatal Error: Fixture created in Universe that does not exist. Normally, the programm should \
+        Err(ChannelError(UniverseOutOfRange)) => {
+            panic!("Fatal Error: Fixture created in Universe that does not exist. Normally, the programm should \
         automatically create an universe, but somehow, this hasn't happened");
-    } else if let Err(ChannelError::ChannelAlreadyInUse(overlapping_fixture)) = fixture {
-        eprintln!("Error: At least one Channel of this fixture is overlapping with {}.\
-        Fixture has not been created.", overlapping_fixture);
-        return;
-    }
+        }
 
-    match list.fixtures.entry(name.clone()) {
-        std::collections::hash_map::Entry::Occupied(_) => {
-            eprintln!("Error: \"{name}\" already exists");
+        Err(ChannelError(ChannelAlreadyInUse(overlapping_fixture))) => {
+            eprintln!("Error: At least one Channel of this fixture is overlapping with {}.\
+            Fixture has not been created.", overlapping_fixture);
         }
-        std::collections::hash_map::Entry::Vacant(entry) => {
-            entry.insert(fixture.unwrap());
+
+        Err(InvalidFixtureType(fixture_type_name)) => {
+            eprintln!("Error: There is no fixture-type named \"{fixture_type_name}\".");
         }
+
+        Err(FixtureNameAlreadyInUse(name)) => {
+            eprintln!("Error: The Fixture name {name} is already used.");
+        }
+
+        Err(_) => {
+            eprintln!("Error: new_fixture_type() threw an Error it shouldn't");
+            None::<Fixture>.unwrap();
+            // Mir ist langweilig, deswegen crashe ich hier, auf die lustigste und verwirrendste Art. Hier muss auch
+            // gecrashed werden, weil das nie passieren sollte, und ich hab all das einfach von new_fixture_type kopiert
+        }
+
+        Ok(_) => { println!("{} created successfully", name); }
     }
-    
 }
 
 fn set_value(mut args: SplitAsciiWhitespace) {
@@ -226,30 +235,45 @@ fn set_value(mut args: SplitAsciiWhitespace) {
     let property_name = args.next().unwrap().to_string();
     let value = args.next().unwrap().to_string();
 
+    //*******************************************
+    //***Parsing the input to the right Format***
+    //*******************************************
     if let Err(_) = value.parse::<u16>() {
         eprintln!("Error: \"{value}\" is not a valid value.");
         return;
     }
     let value = value.parse::<u16>().unwrap();
 
-    let mut list = fixture::FIXTURE_LIST.write().unwrap();
-    if let None = list.fixtures.get(&fixture_name) {
-        eprintln!("Error: \"{fixture_name}\" is not a valid Fixture");
-        return;
+    //****************************************************
+    //**Changing the value and handling possible Errors***
+    //****************************************************
+    let result = Fixture::set(fixture_name.clone(), &*property_name, value);
+    match result {
+        Err(InvalidPropertyType(property_type)) => {
+            eprintln!("Error: \"{property_type}\" is not a valid PropertyType");
+        }
+
+        Err(MissingProperty(_)) => {
+            eprintln!("Error: \"{fixture_name}\" has no property \"{property_name}\"")
+        }
+
+        Err(InvalidFixture(name)) => {
+            eprintln!("Error: \"{name}\" is not a valid Fixture");
+        }
+
+        Err(_) => {
+            eprintln!("Error: new_fixture_type() threw an Error it shouldn't");
+            None::<Fixture>.unwrap();
+            // Mir ist langweilig, deswegen crashe ich hier, auf die lustigste und verwirrendste Art. Hier muss auch
+            // gecrashed werden, weil das nie passieren sollte, und ich hab all das einfach schon wieder von
+            // new_fixture_type kopiert
+        }
+
+        Ok(_) => { println!("Value changed successfully"); }
     }
-    let fixture = list.fixtures.get_mut(&fixture_name).unwrap();
-
-    let result = fixture.set(&*property_name, value);
-
-    if let Err(InvalidPropertyType(property_type)) = result {
-        eprintln!("Error: \"{property_type}\" is not a valid PropertyType");
-    } else if let Err(MissingProperty(_)) = result {
-        eprintln!("Error: \"{fixture_name}\" has no property \"{property_name}\"")
-    } else if let Err(_) = result {
-        unreachable!();
-    }
-
 }
+
+
 fn get_type(mut args: SplitAsciiWhitespace) {
     let fixture_name = args.next().unwrap().to_string();
 

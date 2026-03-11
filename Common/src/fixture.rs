@@ -1,8 +1,9 @@
-//#![allow(dead_code)]
-use std::collections::HashMap;
+#![allow(dead_code)]
+use std::collections::{HashMap, HashSet};
 use std::sync::{LazyLock, RwLock};
 use crate::color::{Color, ColorPropertyType, ColorType};
 use crate::fixture::ChannelReservation::{Empty, Pending, Reserved};
+use crate::fixture::FixtureError::{InvalidFixtureType, InvalidFixture};
 
 pub struct FixtureList {
     pub fixture_types: HashMap<String, FixtureType>,
@@ -245,13 +246,13 @@ pub enum PropertyType {
 }
 
 impl PropertyType {
-    fn from_str(property_type: &str) -> Result<PropertyType,ParseError> {
+    fn from_str(property_type: &str) -> Result<PropertyType, FixtureError> {
         if let Ok(property_type) = ColorPropertyType::from_string(property_type) {
             Ok(PropertyType::Color(property_type))
         } else if let Ok(property_type) = SimplePropertyType::from_string(property_type) {
             Ok(PropertyType::Simple(property_type))
         } else {
-            Err(ParseError::InvalidPropertyType(property_type.to_string()))
+            Err(FixtureError::InvalidPropertyType(property_type.to_string()))
         }
     }
 }
@@ -274,11 +275,30 @@ pub struct Fixture {
 
 
 impl FixtureType {
-    pub fn new(name: String, properties: HashMap<String, (u16, Option<u16>)>) -> Result<Self, ParseError> {
+    pub fn new(name: String, properties: HashMap<String, (u16, Option<u16>)>) -> Result<(), FixtureError> {
         let mut color = ColorType::new();
         let mut new_properties = HashMap::new();
+        let mut seen_channels = HashSet::new();
 
         for (key, value) in properties {
+            
+            let mut seen_this_channel = !seen_channels.insert(value.0);
+            let mut out_of_range = value.0 > MAX_CHANNEL;
+            
+            
+            if let Some(channel) = value.1 {
+                seen_this_channel = seen_this_channel || seen_channels.contains(&channel);
+                out_of_range = out_of_range || channel > MAX_CHANNEL;
+            }
+            
+            if seen_this_channel {
+                return Err(FixtureError::ChannelError(ChannelError::ChannelAlreadyInUse(key)));
+            }
+            
+            if out_of_range {
+                return Err(FixtureError::ChannelError(ChannelError::ChannelOutOfRange))
+            }
+            
             if color.parse(key.clone(), value)? {
                 continue
             }
@@ -293,17 +313,39 @@ impl FixtureType {
            None
         };
 
-        Ok(FixtureType {
+        let output = Self {
             color,
             properties: new_properties,
-            name,
-        })
+            name: name.clone(),
+        };
+
+        let mut list = FIXTURE_LIST.write().unwrap();
+        match list.fixture_types.entry(name.clone()) {
+            std::collections::hash_map::Entry::Occupied(_) => {
+                Err(FixtureError::FixtureTypeNameAlreadyInUse(name))
+            },
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(output);
+                Ok(())
+            }
+        }
     }
 }
 
 impl Fixture {
-    pub fn new(fixture_type: &FixtureType, start_channel:u16, universe: usize, name:String) -> Result<Self, ChannelError> {
+    pub fn new(fixture_type_name:String, start_channel:u16, universe: usize, name:String) -> Result<(), FixtureError> {
         ensure_universes_size(universe + 1);
+
+        let list = FIXTURE_LIST.read().unwrap();
+
+
+        let fixture_type = list.fixture_types.get(fixture_type_name.as_str());
+        if let Some(_) = fixture_type {
+            return Err(InvalidFixtureType(fixture_type_name.clone()))
+        }
+
+        let fixture_type = fixture_type.unwrap();
+
         let color = fixture_type.color.as_ref()
             .map(|c| {
                 Color::new(c, start_channel, universe, &name)
@@ -323,30 +365,49 @@ impl Fixture {
             channel.reserve_final(&*name, universe, PropertyType::Simple(property_type.clone()));
         });
 
-        Ok(Self {
+        let fixture = Self {
             color,
             fixture_type: fixture_type.name.clone(),
             properties,
             start_channel,
             universe,
-            name,
-        })
+            name: name.clone(),
+        };
+
+        let mut list = FIXTURE_LIST.write().unwrap();
+
+        match list.fixtures.entry(name.clone()) {
+            std::collections::hash_map::Entry::Occupied(_) => {
+                Err(FixtureError::FixtureNameAlreadyInUse(name))
+            }
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(fixture);
+                Ok(())
+            }
+        }
     }
 
 
-    pub fn set(&mut self, property_type: &str, value: u16) -> Result<(), ParseError> {
+    pub fn set(fixture_name: String, property_type: &str, value: u16) -> Result<(), FixtureError> {
         let property_type= PropertyType::from_str(property_type)?;
 
+        let mut list = FIXTURE_LIST.write().unwrap();
+        if let None = list.fixtures.get(&fixture_name) {
+            return Err(InvalidFixture(fixture_name.clone()));
+        }
+        let fixture = list.fixtures.get_mut(&fixture_name).unwrap();
+
+
         if let PropertyType::Simple(property_type) = property_type {
-            let property = self.properties.get_mut(&property_type)
-                .ok_or(ParseError::MissingProperty(PropertyType::Simple(property_type)))?;
+            let property = fixture.properties.get_mut(&property_type)
+                .ok_or(FixtureError::MissingProperty(PropertyType::Simple(property_type)))?;
 
             property.value = value;
         } else if let PropertyType::Color(property_type) = property_type {
-            if let Some(color) = &mut self.color {
+            if let Some(color) = &mut fixture.color {
                 color.set(property_type, value);
             } else {
-                return Err(ParseError::MissingProperty(PropertyType::Color(property_type)));
+                return Err(FixtureError::MissingProperty(PropertyType::Color(property_type)));
             }
         } else {
             unreachable!()
@@ -383,7 +444,7 @@ impl Fixture {
 }
 
 impl SimplePropertyType {
-    fn from_string(s: &str) -> Result<SimplePropertyType, ParseError> {
+    fn from_string(s: &str) -> Result<SimplePropertyType, FixtureError> {
         match s {
             "dimmer" => Ok(SimplePropertyType::Dimmer),
             "strobe" => Ok(SimplePropertyType::Strobe),
@@ -408,7 +469,7 @@ impl SimplePropertyType {
                 if let Some(suffix) = s.strip_prefix("other_") {
                     Ok(SimplePropertyType::Other(suffix.to_string()))
                 } else {
-                    Err(ParseError::InvalidPropertyType(s.to_string()))
+                    Err(FixtureError::InvalidPropertyType(s.to_string()))
                 }
             }
         }
@@ -423,10 +484,16 @@ pub enum ChannelReservation<T, U> {
 }
 
 #[derive(Debug)]
-pub enum ParseError {
+pub enum FixtureError {
     InvalidPropertyType(String),
     MultipleColorOutputTypes(String),
+    FixtureNameAlreadyInUse(String),
+    FixtureTypeNameAlreadyInUse(String),
+    InvalidFixtureType(String),
+    InvalidFixture(String),
     MissingProperty(PropertyType),
+    OverlappingChannels,
+    ChannelError(ChannelError)
 }
 
 #[derive(Debug)]
@@ -434,4 +501,10 @@ pub enum ChannelError {
     ChannelOutOfRange,
     UniverseOutOfRange,
     ChannelAlreadyInUse(String),
+}
+
+impl From<ChannelError> for FixtureError {
+    fn from(e: ChannelError) -> Self {
+        FixtureError::ChannelError(e)
+    }
 }
