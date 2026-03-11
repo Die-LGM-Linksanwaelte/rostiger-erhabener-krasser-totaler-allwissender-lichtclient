@@ -5,6 +5,10 @@ use crate::color::{Color, ColorPropertyType, ColorType};
 use crate::fixture::ChannelReservation::{Empty, Pending, Reserved};
 use crate::fixture::FixtureError::{InvalidFixtureType, InvalidFixture};
 
+
+pub const MAX_CHANNEL: u16 = 512;
+
+
 pub struct FixtureList {
     pub fixture_types: HashMap<String, FixtureType>,
     pub fixtures: HashMap<String, Fixture>,
@@ -19,9 +23,10 @@ impl FixtureList {
     }
 }
 
-pub static DMX_CONFIGURATION: LazyLock<RwLock<Vec<[ChannelReservation<String, PropertyType>; 512]>>> = LazyLock::new(||{
-    RwLock::new(Vec::new())
-});
+pub static DMX_CONFIGURATION: LazyLock<RwLock<Vec<[ChannelReservation<String, PropertyType>; MAX_CHANNEL as usize]>>> =
+    LazyLock::new(||{
+        RwLock::new(Vec::new())
+    });
 
 pub fn universe_count() -> usize {
     DMX_CONFIGURATION.read().expect("Failed to lock DMX_CONFIGURATION").len()
@@ -29,7 +34,8 @@ pub fn universe_count() -> usize {
 
 pub fn ensure_universes_size(size: usize) {
     if size > universe_count() {
-        let mut config = DMX_CONFIGURATION.write().expect("Failed to write DMX_CONFIGURATION");
+        let mut config = DMX_CONFIGURATION.write().expect("Failed to write \
+        DMX_CONFIGURATION");
         config.resize_with(size, || {
             std::array::from_fn(|_| Empty)
         })
@@ -74,12 +80,13 @@ impl Channel {
     fn checked_add(value1: u16, value2: u16) -> Result<u16, ChannelError> {
         value1
             .checked_add(value2)
-            .filter(|&x| x <= 512)
+            .filter(|&x| x <= MAX_CHANNEL)
             .ok_or(ChannelError::ChannelOutOfRange)
     }
 
     pub(crate) fn reserve_pending(&self, fixture_name: &str, universe: usize) -> Result<(), ChannelError> {
-        let mut dmx_config = DMX_CONFIGURATION.write().expect("Failed to write DMX_CONFIGURATION");
+        let mut dmx_config = DMX_CONFIGURATION.write().expect("Failed to write \
+        DMX_CONFIGURATION");
 
         //Since ensure_universe_count should have been executed before, this Error should never occur, therefore it
         // should panic
@@ -103,7 +110,8 @@ impl Channel {
     }
 
     pub(crate) fn reserve_final(&self, fixture_name: &str, universe: usize, property_type: PropertyType) {
-        let mut dmx_config = DMX_CONFIGURATION.write().expect("Failed to write DMX_CONFIGURATION");
+        let mut dmx_config = DMX_CONFIGURATION.write().expect("Failed to write \
+        DMX_CONFIGURATION");
 
         //Since ensure_universe_count should have been executed before, this Error should never occur, therefore it
         // should panic
@@ -440,6 +448,8 @@ impl Fixture {
     pub fn get_fixture_type(&self) -> &str {
         &self.fixture_type
     }
+    
+    pub fn get_name(&self) -> &str {&self.name}
 
 }
 
