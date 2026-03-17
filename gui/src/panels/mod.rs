@@ -1,6 +1,7 @@
 use eframe::egui;
 
 pub mod fixture;
+pub mod settings;
 pub mod terminal;
 pub mod universe;
 
@@ -9,14 +10,16 @@ pub enum Tab {
     Fixture(String),
     Universe(u32),
     Terminal,
+    Settings,
 }
 
 impl Tab {
     pub fn title(&self) -> String {
         match self {
-            Tab::Fixture(name) => format!("🔦 {}", name),
-            Tab::Universe(id) => format!("🌌 Universe {}", id),
-            Tab::Terminal => "💻 Terminal".to_string(),
+            Tab::Fixture(name) => format!("{}", name),
+            Tab::Universe(id) => format!("Universe {}", id),
+            Tab::Terminal => "Terminal".to_string(),
+            Tab::Settings => "Settings".to_string(),
         }
     }
 
@@ -25,6 +28,7 @@ impl Tab {
             Tab::Fixture(name) => fixture::ui(ui, name),
             Tab::Universe(id) => universe::ui(ui, id, 5),
             Tab::Terminal => terminal::ui(ui),
+            Tab::Settings => settings::ui(ui),
         }
     }
 }
