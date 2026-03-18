@@ -3,6 +3,7 @@ use std::net::UdpSocket;
 use crate::interfaces::DmxInterface;
 use Common::fixture::MAX_CHANNEL;
 
+/// Interface for outputting to artnet. Uses no artnet-library, works only with UDP. Implements ['DmxInterface']
 pub(crate) struct ArtnetInterface {
     socket: UdpSocket,
     target: String,
@@ -10,6 +11,14 @@ pub(crate) struct ArtnetInterface {
 }
 
 impl ArtnetInterface {
+    /// Constructor for ArtnetInterface.
+    /// # Arguments
+    ///
+    /// * 'socket' - UDP-socket used for outputting artnet. Doesn't need to set_broadcast to true, because it already
+    ///             happens in this method
+    /// * 'target' - The target IP-address the artnet-packages get sent to. Warning: If this String is an valid
+    ///             IP-address doesn't get checked until sending the packages. May be changed at a later point in
+    ///             Development. TODO
     pub fn new(socket: UdpSocket, target: String) -> Self {
         socket.set_broadcast(true).unwrap();
         Self { socket,  target, sequence: 0 }

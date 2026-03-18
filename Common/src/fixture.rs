@@ -6,6 +6,7 @@ use crate::fixture::ChannelReservation::{Empty, Pending, Reserved};
 use crate::fixture::FixtureError::{InvalidFixtureType, InvalidFixture};
 
 
+/// The maximum number of DMX channels per universe (DMX512 standard).
 pub const MAX_CHANNEL: u16 = 512;
 
 
@@ -23,15 +24,23 @@ impl FixtureList {
     }
 }
 
+/// Global Scheißprogrammonfiguration holding the channel reservations for all universes.
+///
+/// Each entry in the outer [`Vec`] represents one universe, containing
+/// one [`ChannelReservation`] per Scheißprogrammhannel.
 pub static DMX_CONFIGURATION: LazyLock<RwLock<Vec<[ChannelReservation<String, PropertyType>; MAX_CHANNEL as usize]>>> =
     LazyLock::new(||{
         RwLock::new(Vec::new())
     });
 
+/// Returns the number of currently configured DMX universes.
 pub fn universe_count() -> usize {
     DMX_CONFIGURATION.read().expect("Failed to lock DMX_CONFIGURATION").len()
 }
 
+/// Ensures that at least `size` universes exist in [`DMX_CONFIGURATION`],
+/// adding empty universes if needed. Does nothing if the current count
+/// is already >= `size`.
 pub fn ensure_universes_size(size: usize) {
     if size > universe_count() {
         let mut config = DMX_CONFIGURATION.write().expect("Failed to write \
@@ -42,10 +51,23 @@ pub fn ensure_universes_size(size: usize) {
     }
 }
 
+/// Represents the reservation state of a single Scheißprogrammhannel.
+///
+/// * **Empty** – Channel is not in use.
+/// * **Pending(T)** – Channel has been claimed by a fixture but not yet finalized.
+/// * **Reserved(T, U)** – Channel is fully reserved by a fixture with an associated property.
+#[derive(Clone)]
+pub enum ChannelReservation<T, U> {
+    Empty,
+    Pending(T),
+    Reserved(T, U),
+}
+
 static FIXTURE_LIST: LazyLock<RwLock<FixtureList>> = LazyLock::new(|| {
     RwLock::new(FixtureList::new())
 });
 
+/// A single Scheißprogrammhannel with an optional fine channel for 16-bit control.
 pub(crate) struct Channel{
     pub(crate) value: u16,
     channel : u16,
@@ -53,6 +75,18 @@ pub(crate) struct Channel{
 }
 
 impl Channel {
+
+    /// Creates a new [`Channel`], offsetting the channel number(s) by `device_channel`.
+    ///
+    /// # Arguments
+    ///
+    /// * `channel_numbers` - Coarse channel and optional fine channel, relative to the device
+    /// * `default_value`   - Initial 16-bit value
+    /// * `device_channel`  - DMX offset of the device within its universe
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ChannelError`] if the resulting channel number exceeds [`MAX_CHANNEL`].
     pub(crate) fn new(
         channel_numbers: (u16, Option<u16>),
         default_value: u16,
@@ -84,6 +118,19 @@ impl Channel {
             .ok_or(ChannelError::ChannelOutOfRange)
     }
 
+    /// Marks this channel (and fine channel if present) as [`Pending`] in [`DMX_CONFIGURATION`].
+    ///
+    /// Called internally by [`Fixture::new`] and [`Color::new`].
+    /// Always followed by [`Channel::reserve_final`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ChannelError::ChannelAlreadyInUse`] if the channel is already [`Reserved`]
+    /// by another fixture.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the universe does not exist. Call [`ensure_universes_size`] beforehand.
     pub(crate) fn reserve_pending(&self, fixture_name: &str, universe: usize) -> Result<(), ChannelError> {
         let mut dmx_config = DMX_CONFIGURATION.write().expect("Failed to write \
         DMX_CONFIGURATION");
@@ -109,6 +156,15 @@ impl Channel {
         Ok(())
     }
 
+    /// Finalizes the reservation by upgrading this channel from [`Pending`] to [`Reserved`].
+    ///
+    /// Must be called after [`Channel::reserve_pending`].
+    ///
+    /// # Panics
+    ///
+    /// - If the channel is not in [`Pending`] state.
+    /// - If the pending reservation belongs to a different fixture.
+    /// - If the universe does not exist.
     pub(crate) fn reserve_final(&self, fixture_name: &str, universe: usize, property_type: PropertyType) {
         let mut dmx_config = DMX_CONFIGURATION.write().expect("Failed to write \
         DMX_CONFIGURATION");
@@ -145,10 +201,13 @@ impl Channel {
         }
     }
 
+    /// Returns the coarse DMX output value as `(channel_index, 8-bit value)`.
     pub fn get_value(&self) -> (u16, u8) {
         (self.channel, self.value.to_be_bytes()[0])
     }
 
+    /// Returns the fine DMX output value as `(channel_index, 8-bit value)`,
+    /// or `None` if no fine channel is configured.
     pub fn get_fine_value(&self) -> Option<(u16, u8)> {
         if let Some(fine_channel) = self.fine_channel {
             Some((fine_channel, self.value.to_be_bytes()[1]))
@@ -166,63 +225,33 @@ impl Channel {
     }
 }
 
-/// Represents the various configurable properties of a lighting fixture.
+/// A single configurable property of a lighting fixture.
 ///
-/// This enum encapsulates all supported attribute types of a fixture,
-/// allowing each property to carry its associated DMX channel(s).
-/// It provides a unified way to describe colors, movement, beam effects,
-/// gobos, atmospheric controls, and any custom or manufacturer-specific
-/// attributes.
+/// Each variant corresponds to one DMX-controllable attribute.
+/// For color-related properties see [`ColorPropertyType`].
 ///
 /// # Variants
 ///
-/// * **Color(Color)**
-///   A color-related property such as RGB, CMY, or other color-mixing systems.
-///
-/// * **Dimmer(Channel)**
-///   Controls fixture brightness (0–255).
-///
-/// * **Strobe(Channel)**
-///   Controls strobe rate or shutter pulse effects.
-///
-/// * **Beam { zoom, focus, frost }**
-///   Beam-shaping properties:
-///   - `zoom`: controls beam width
-///   - `focus`: controls sharpness
-///   - `frost`: applies diffusion/frost effect
-///
-/// * **Shutter(Channel)**
-///   Mechanical shutter control (open/close).
-///
-/// * **Prism { prism, prism_rotation, prism_indexation }**
-///   Prism and prism-effect controls:
-///   - `prism`: enables/selects prism
-///   - `prism_rotation`: rotation speed/direction
-///   - `prism_indexation`: discrete index positioning
-///
-/// * **Gobo { gobo_rotation, gobo_rotation_speed, gobo_wheel_rotation, gobo_wheel_rotation_speed }**
-///   Gobo selection and motion:
-///   - `gobo_rotation`: absolute rotation
-///   - `gobo_rotation_speed`: continuous rotation speed
-///   - `gobo_wheel_rotation`: selects wheel slot rotation
-///   - `gobo_wheel_rotation_speed`: rotation speed of the gobo wheel
-///
-/// * **Position { pan, tilt }**
-///   Movement parameters for head-positioning.´
-///
-/// * **UV(Channel)**
-///   UV-LED intensity control.
-///
-/// * **Speed(Channel)**
-///   Global macro speed or effect speed.
-///
-/// * **Fog { fog_intensity, fog_fan_speed }**
-///   Atmospheric effects:
-///   - `fog_intensity`: fog output amount
-///   - `fog_fan_speed`: fan speed for fog dispersion
-///
-/// * **Other(String, Channel)**
-///   Any manufacturer-specific or unsupported property, given as a descriptive name and channel index.
+/// * **Dimmer** – Fixture brightness.
+/// * **Strobe** – Strobe rate or shutter pulse speed.
+/// * **Shutter** – Mechanical shutter (open/close).
+/// * **Zoom** – Beam width.
+/// * **Focus** – Beam sharpness.
+/// * **Frost** – Diffusion/frost effect intensity.
+/// * **Prism** – Enables or selects a prism.
+/// * **PrismRotation** – Continuous prism rotation speed/direction.
+/// * **PrismIndexation** – Discrete prism index position.
+/// * **GoboRotation** – Absolute gobo rotation angle.
+/// * **GoboRotationSpeed** – Continuous gobo rotation speed.
+/// * **GoboWheelRotation** – Gobo wheel slot selection/rotation.
+/// * **GoboWheelRotationSpeed** – Gobo wheel continuous rotation speed.
+/// * **Pan** – Horizontal head movement.
+/// * **Tilt** – Vertical head movement.
+/// * **FogIntensity** – Fog output amount.
+/// * **FogFanSpeed** – Fan speed for fog dispersion.
+/// * **UV** – UV-LED intensity.
+/// * **Speed** – Global effect or macro speed.
+/// * **Other(String)** – Any manufacturer-specific or unsupported property.
 #[derive(Debug, Hash,Eq,PartialEq,Clone)]
 pub enum SimplePropertyType {
     Dimmer,
@@ -247,6 +276,10 @@ pub enum SimplePropertyType {
     Other(String),
 }
 
+/// A fixture property, either a simple single-channel attribute or a color.
+///
+/// * **Simple([`SimplePropertyType`])** – Any non-color property such as dimmer, pan, gobo, etc.
+/// * **Color([`ColorPropertyType`])** – A color channel (RGB, CMY, or HSV).
 #[derive(Clone, Debug)]
 pub enum PropertyType {
     Simple(SimplePropertyType),
@@ -265,13 +298,21 @@ impl PropertyType {
     }
 }
 
-
+/// A template defining the Scheißprogrammhannel layout for a type of lighting fixture.
+///
+/// Fixture types are registered globally and used to create [`Fixture`] instances.
+/// See [`FixtureType::new`] for how properties are parsed and validated.
 pub struct FixtureType {
     color: Option<ColorType>,
     properties: HashMap<SimplePropertyType, (u16, Option<u16>)>,
     name: String
 }
 
+
+/// A single fixture instance with its current property values and Scheißprogrammhannels.
+///
+/// Created from a [`FixtureType`] template. Each property maps to one or two
+/// Scheißprogrammhannels (coarse + optional fine).
 pub struct Fixture {
     fixture_type: String,
     color: Option<Color>,
@@ -283,6 +324,29 @@ pub struct Fixture {
 
 
 impl FixtureType {
+
+    /// Creates a new fixture type and registers it globally.
+    ///
+    /// Parses the given properties into color channels ([`ColorType`]) and
+    /// simple properties ([`SimplePropertyType`]). Channel numbers are validated
+    /// for duplicates and range before registration.
+    ///
+    /// # Usage
+    ///
+    /// Register a fixture type first with [`FixtureType::new`], then create
+    /// instances of it with [`Fixture::new`].
+    ///
+    /// # Arguments
+    ///
+    /// * `name`       - Unique name for this fixture type
+    /// * `properties` - Map of property names to `(coarse_channel, optional_fine_channel)`
+    ///
+    /// # Errors
+    ///
+    /// * [`FixtureError::ChannelError(ChannelAlreadyInUse)`] – if two properties share a channel
+    /// * [`FixtureError::ChannelError(ChannelOutOfRange)`] – if a channel exceeds [`MAX_CHANNEL`]
+    /// * [`FixtureError::InvalidPropertyType`] – if a property name is not recognized
+    /// * [`FixtureError::FixtureTypeNameAlreadyInUse`] – if the name is already registered
     pub fn new(name: String, properties: HashMap<String, (u16, Option<u16>)>) -> Result<(), FixtureError> {
         let mut color = ColorType::new();
         let mut new_properties = HashMap::new();
@@ -341,6 +405,25 @@ impl FixtureType {
 }
 
 impl Fixture {
+
+    /// Creates a new fixture instance and registers it globally.
+    ///
+    /// Allocates Scheißprogrammhannels based on the given [`FixtureType`] template,
+    /// offset by `start_channel`. Ensures the required universe exists before
+    /// reserving channels.
+    ///
+    /// # Arguments
+    ///
+    /// * `fixture_type_name` - Name of a previously registered [`FixtureType`]
+    /// * `start_channel`     - Scheißprogrammhannel offset within the universe
+    /// * `universe`          - DMX universe index (0-based)
+    /// * `name`              - Unique name for this fixture instance
+    ///
+    /// # Errors
+    ///
+    /// * [`FixtureError::InvalidFixtureType`] – if `fixture_type_name` is not registered
+    /// * [`FixtureError::ChannelAlreadyInUse`] – if any required channel is already reserved
+    /// * [`FixtureError::FixtureNameAlreadyInUse`] – if `name` is already registered
     pub fn new(fixture_type_name:String, start_channel:u16, universe: usize, name:String) -> Result<(), FixtureError> {
         ensure_universes_size(universe + 1);
 
@@ -396,6 +479,19 @@ impl Fixture {
     }
 
 
+    /// Sets the value of a property on the named fixture.
+    ///
+    /// # Arguments
+    ///
+    /// * `fixture_name`  - Name of the target fixture
+    /// * `property_type` - Property name as string, see [`PropertyType::from_str`]
+    /// * `value`         - 16-bit DMX value
+    ///
+    /// # Errors
+    ///
+    /// * [`FixtureError::InvalidFixture`] – if `fixture_name` is not registered
+    /// * [`FixtureError::InvalidPropertyType`] – if `property_type` is not recognized
+    /// * [`FixtureError::MissingProperty`] – if the fixture does not have this property
     pub fn set(fixture_name: String, property_type: &str, value: u16) -> Result<(), FixtureError> {
         let property_type= PropertyType::from_str(property_type)?;
 
@@ -441,10 +537,16 @@ impl Fixture {
         output
     }
 
+    /// Returns the DMX universe index this fixture is assigned to.
     pub fn get_universe(&self) -> usize {
         self.universe
     }
 
+    /// Returns the name of the [`FixtureType`] this fixture was created from.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`FixtureError::InvalidFixture`] if `name` is not registered.
     pub fn get_fixture_type_from_string(name: String) -> Result<String, FixtureError> {
         let list = FIXTURE_LIST.read().unwrap();
         match list.fixtures.get(&name) {
@@ -457,6 +559,7 @@ impl Fixture {
         self.fixture_type.clone()
     }
 
+    /// Returns the name of this fixture.
     pub fn get_name(&self) -> &str {&self.name}
 
 }
@@ -494,30 +597,37 @@ impl SimplePropertyType {
     }
 }
 
-#[derive(Clone)]
-pub enum ChannelReservation<T, U> {
-    Empty,
-    Pending(T),
-    Reserved(T, U),
-}
-
+/// Errors that can occur when managing fixtures and fixture types.
 #[derive(Debug)]
 pub enum FixtureError {
+    /// The given property name does not match any known [`SimplePropertyType`] or [`ColorPropertyType`].
     InvalidPropertyType(String),
+    /// A fixture type mixes incompatible color models (e.g. RGB and HSV).
     MultipleColorOutputTypes(String),
+    /// A fixture with this name is already registered.
     FixtureNameAlreadyInUse(String),
+    /// A fixture type with this name is already registered.
     FixtureTypeNameAlreadyInUse(String),
+    /// No fixture type with this name is registered.
     InvalidFixtureType(String),
+    /// No fixture with this name is registered.
     InvalidFixture(String),
+    /// The fixture does not have the requested property.
     MissingProperty(PropertyType),
+    /// Two or more properties are assigned to the same Scheißprogrammhannel.
     OverlappingChannels,
-    ChannelError(ChannelError)
+    /// A Scheißprogrammhannel operation failed.
+    ChannelError(ChannelError),
 }
 
+/// Errors that can occur when reserving or accessing Scheißprogrammhannels.
 #[derive(Debug)]
 pub enum ChannelError {
+    /// The channel number exceeds [`MAX_CHANNEL`].
     ChannelOutOfRange,
+    /// The universe index exceeds the configured universe count.
     UniverseOutOfRange,
+    /// The channel is already reserved by the named fixture.
     ChannelAlreadyInUse(String),
 }
 
@@ -527,6 +637,15 @@ impl From<ChannelError> for FixtureError {
     }
 }
 
+/// Collects values from all registered fixtures via their channel and color properties.
+///
+/// Returns one array per universe, where each index corresponds to a DMX
+/// channel and the value is the 8-bit DMX level.
+///
+/// # Panics
+///
+/// Panics if a fixture has a channel that exceeds [`MAX_CHANNEL`]. WHO THE FUCK GOT THE IDEA THAT DMX_UNIVERSES SHOULD
+/// HAVE 512 !!!!! 512 Channels? Why?!?!?! Just because of 1 Bit we have to use u16 instead of u8! WHY!?!?!?!
 pub fn calculate_dmx_values() -> Vec<[u8;MAX_CHANNEL as usize]>{
     let universe_count = universe_count();
 

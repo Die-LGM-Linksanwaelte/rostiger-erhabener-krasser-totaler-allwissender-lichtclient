@@ -5,6 +5,9 @@ use Common::fixture::{Fixture, FixtureType};
 use Common::fixture::ChannelError::{ChannelOutOfRange, ChannelAlreadyInUse, UniverseOutOfRange};
 use Common::fixture::FixtureError::{InvalidPropertyType, MultipleColorOutputTypes, MissingProperty, FixtureTypeNameAlreadyInUse, ChannelError, InvalidFixtureType, FixtureNameAlreadyInUse, InvalidFixture};
 
+
+/// Checks if the given string is a valid command and executes it.
+/// See '../help.txt` for a list of available commands.
 pub(crate) fn parse_command(line: String) {
 
     let mut line_iter = line.split_ascii_whitespace();

@@ -8,10 +8,22 @@ use crate::artnet::ArtnetInterface;
 const TARGET: &str = "255.255.255.255:6454";
 const FREQUENCY: u64 = 23;
 
+/// Trait that should be implemented by all interfaces. For now, there is no possibility to modularly create a
+/// DmxInterface. TODO
 pub trait DmxInterface {
+    /// Sends universes to fixtures.
+    ///
+    /// # Arguments
+    ///
+    /// * 'local_universe_index' - If an interface can output more than one universe, this parameter is set to the
+    ///                            universe we want to output on (0-indexed)
+    /// * 'data' - An Array with all the DMX-values of the universe we want to output
     fn send_universe(&self, local_universe_index: u16, data: &[u8;MAX_CHANNEL as usize]) -> Result<(), io::Error>;
 }
 
+/// Initiates the interfaces, then calculates the DMX-values and outputs them to the interfaces. For now, this function
+/// outputs the DMX-values all to artnet, but this should later be changed to allow all interfaces, that implement the
+/// trait ['DmxInterface']. TODO
 pub fn dmx_output_loop() -> io::Result<()> {
     let socket = UdpSocket::bind("0.0.0.0:0")?;
     socket.set_broadcast(true)?;
