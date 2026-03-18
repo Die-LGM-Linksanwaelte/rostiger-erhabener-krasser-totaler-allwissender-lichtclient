@@ -3,6 +3,8 @@ use Interface::interfaces::dmx_output_loop;
 
 mod commandline;
 
+
+/// Spawns the ['dmx_output_loop']-thread an than starts the main REPL.
 fn main() -> io::Result<()> {
 
     let artnet_handle = std::thread::spawn(|| {
