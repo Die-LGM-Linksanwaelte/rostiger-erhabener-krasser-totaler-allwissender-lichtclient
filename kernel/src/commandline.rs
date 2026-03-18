@@ -76,9 +76,8 @@ pub(crate) fn parse_command(line: String) {
         }
 
         Some("break") => {
-            let _guard = fixture::FIXTURE_LIST.read().unwrap();
             let _dmx_config = fixture::DMX_CONFIGURATION.read().unwrap();
-            let _universes = Interface::interfaces::calculate_dmx_values();
+            let _universes = fixture::calculate_dmx_values();
             println!("Add a breakpoint at this point in the code to check the datastructures");
         }
 
@@ -277,15 +276,10 @@ fn set_value(mut args: SplitAsciiWhitespace) {
 fn get_type(mut args: SplitAsciiWhitespace) {
     let fixture_name = args.next().unwrap().to_string();
 
-    let list = fixture::FIXTURE_LIST.read().unwrap();
-    if let None = list.fixtures.get(&fixture_name) {
-        eprintln!("Error: \"{fixture_name}\" is not a valid Fixture");
-        return;
+    match Fixture::get_fixture_type_from_string(fixture_name.clone()) {
+        Ok(fixture_type) => println!("\"{fixture_name}\" is a fixture of the type \"{fixture_type}\""),
+        Err(InvalidFixture(fixture)) => eprintln!("Error: \"{fixture}\" is not a valid Fixture"),
+        Err(_) => panic!("Error: get_fixture_type_from_string() threw an Error it shouldn't"),
     }
-    let fixture = list.fixtures.get(&fixture_name).unwrap();
-
-    let fixture_type = fixture.get_fixture_type();
-
-    println!("\"{fixture_name}\" is a fixture of the type \"{fixture_type}\"");
 }
 
