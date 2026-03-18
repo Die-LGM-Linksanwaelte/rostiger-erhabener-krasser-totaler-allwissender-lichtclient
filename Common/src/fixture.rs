@@ -9,7 +9,7 @@ use crate::fixture::FixtureError::{InvalidFixtureType, InvalidFixture};
 pub const MAX_CHANNEL: u16 = 512;
 
 
-pub struct FixtureList {
+struct FixtureList {
     pub fixture_types: HashMap<String, FixtureType>,
     pub fixtures: HashMap<String, Fixture>,
 }
@@ -42,7 +42,7 @@ pub fn ensure_universes_size(size: usize) {
     }
 }
 
-pub static FIXTURE_LIST: LazyLock<RwLock<FixtureList>> = LazyLock::new(|| {
+static FIXTURE_LIST: LazyLock<RwLock<FixtureList>> = LazyLock::new(|| {
     RwLock::new(FixtureList::new())
 });
 
@@ -517,4 +517,37 @@ impl From<ChannelError> for FixtureError {
     fn from(e: ChannelError) -> Self {
         FixtureError::ChannelError(e)
     }
+}
+
+pub fn calculate_dmx_values() -> Vec<[u8;MAX_CHANNEL as usize]>{
+    let universe_count = universe_count();
+
+    let mut output = vec![[0u8; MAX_CHANNEL as usize]; universe_count];
+
+    let list = FIXTURE_LIST.read().unwrap();
+
+    list.fixtures.iter().for_each(|(_, fixture)| {
+        let universe_number = fixture.get_universe();
+        let fixture_type = fixture.get_fixture_type();
+        let fixture_name = fixture.get_name();
+
+        if universe_number < universe_count {
+            fixture
+                .get_channel_values()
+                .iter()
+                .for_each(|(channel, value)| {
+                    *output.get_mut(universe_number).unwrap()
+                        .get_mut(*channel as usize)
+                        .ok_or(ChannelError::ChannelOutOfRange).expect(
+                        &format!("Fixture \"{}\" of type {} has a channel that is out of bounds",
+                                 fixture_name, fixture_type
+                        ))
+                        = *value;
+
+                });
+        }
+
+    });
+
+    output
 }
