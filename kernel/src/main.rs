@@ -1,12 +1,12 @@
 use std::io::{self, Write};
-use Interface::interfaces::artnet_loop;
+use Interface::interfaces::dmx_output_loop;
 
 mod commandline;
 
 fn main() -> io::Result<()> {
 
     let artnet_handle = std::thread::spawn(|| {
-        artnet_loop().expect("artnet loop failed");
+        dmx_output_loop().expect("artnet loop failed");
     });
 
 
