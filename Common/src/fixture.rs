@@ -431,7 +431,7 @@ impl Fixture {
 
 
         let fixture_type = list.fixture_types.get(fixture_type_name.as_str());
-        if let Some(_) = fixture_type {
+        if let None = fixture_type {
             return Err(InvalidFixtureType(fixture_type_name.clone()))
         }
 
@@ -464,6 +464,10 @@ impl Fixture {
             universe,
             name: name.clone(),
         };
+
+        // I have no clue why, but for some reason we have to specifically drop the list here, otherwise we have a
+        // deadlock. Normally, this should happen automatically, no clue why ist doesn't
+        drop(list);
 
         let mut list = FIXTURE_LIST.write().unwrap();
 
@@ -520,8 +524,8 @@ impl Fixture {
         Ok(())
     }
 
-    pub fn get_channel_values(&self) -> Vec<(u16, u8)> {
-        let mut output = Vec::new(); //vec![(0u16,0u8);self.properties.len()];
+    fn get_channel_values(&self) -> Vec<(u16, u8)> {
+        let mut output = Vec::new();
 
         self.properties.iter().for_each(|(_, channel)| {
             output.push(channel.get_value());
@@ -665,9 +669,10 @@ pub fn calculate_dmx_values() -> Vec<[u8;MAX_CHANNEL as usize]>{
                 .for_each(|(channel, value)| {
                     *output.get_mut(universe_number).unwrap()
                         .get_mut(*channel as usize)
-                        .ok_or(ChannelError::ChannelOutOfRange).expect(
-                        &format!("Fixture \"{}\" of type {} has a channel that is out of bounds",
-                                 fixture_name, fixture_type
+                        .ok_or(ChannelError::ChannelOutOfRange)
+                        .unwrap_or_else(|_| panic!(
+                            "Fixture \"{}\" of type {} has a channel that is out of bounds",
+                            fixture_name, fixture_type
                         ))
                         = *value;
 
