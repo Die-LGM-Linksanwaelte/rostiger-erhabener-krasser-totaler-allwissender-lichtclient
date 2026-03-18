@@ -445,10 +445,18 @@ impl Fixture {
         self.universe
     }
 
-    pub fn get_fixture_type(&self) -> &str {
-        &self.fixture_type
+    pub fn get_fixture_type_from_string(name: String) -> Result<String, FixtureError> {
+        let list = FIXTURE_LIST.read().unwrap();
+        match list.fixtures.get(&name) {
+            None => Err(InvalidFixture(name)),
+            Some(fixture) => Ok(fixture.fixture_type.clone())
+        }
     }
-    
+
+    fn get_fixture_type(&self) -> String {
+        self.fixture_type.clone()
+    }
+
     pub fn get_name(&self) -> &str {&self.name}
 
 }
