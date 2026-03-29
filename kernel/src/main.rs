@@ -1,12 +1,14 @@
 use std::io::{self, Write};
-use artnet_test::artnet::artnet_loop;
+use Interface::interfaces::dmx_output_loop;
 
 mod commandline;
 
+
+/// Spawns the ['dmx_output_loop']-thread an than starts the main REPL.
 fn main() -> io::Result<()> {
 
     let artnet_handle = std::thread::spawn(|| {
-        artnet_loop().expect("artnet loop failed");
+        dmx_output_loop().expect("artnet loop failed");
     });
 
 
