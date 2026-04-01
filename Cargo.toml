@@ -3,4 +3,6 @@
 resolver = "1"
 members = [
     "rektal",
-]
+    "kernel",
+    "Interface",
+    "Common"]
