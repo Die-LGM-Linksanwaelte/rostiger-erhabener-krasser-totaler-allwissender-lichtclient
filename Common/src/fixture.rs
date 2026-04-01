@@ -359,7 +359,7 @@ impl FixtureType {
             
             
             if let Some(channel) = value.1 {
-                seen_this_channel = seen_this_channel || seen_channels.contains(&channel);
+                seen_this_channel = seen_this_channel || !seen_channels.insert(channel);
                 out_of_range = out_of_range || channel > MAX_CHANNEL;
             }
             
