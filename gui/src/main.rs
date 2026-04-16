@@ -6,7 +6,7 @@ mod panels;
 use panels::Tab;
 
 #[allow(unused_imports)]
-use FixtureTest::fixture::{Fixture, FixtureType, FIXTURE_LIST};
+use common::fixture::{Fixture, FixtureType, FIXTURE_LIST};
 
 fn main() -> eframe::Result<()> {
     let options = eframe::NativeOptions {

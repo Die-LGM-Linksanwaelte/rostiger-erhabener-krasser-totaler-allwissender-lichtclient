@@ -1,5 +1,5 @@
-use FixtureTest::fixture;
-use FixtureTest::fixture::universe_count;
+use common::fixture;
+use common::fixture::universe_count;
 use std::io;
 use std::net::UdpSocket;
 use std::thread::sleep;

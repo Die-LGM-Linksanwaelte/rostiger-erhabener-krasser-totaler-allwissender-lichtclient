@@ -1,5 +1,5 @@
 use std::io::{self, Write};
-use Interface::interfaces::dmx_output_loop;
+use interface::interfaces::dmx_output_loop;
 
 mod commandline;
 

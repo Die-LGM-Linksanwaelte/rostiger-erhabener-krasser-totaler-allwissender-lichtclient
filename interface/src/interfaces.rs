@@ -2,7 +2,7 @@ use std::net::UdpSocket;
 use std::io;
 use std::thread::sleep;
 use std::time::{Duration, Instant};
-use Common::fixture::{MAX_CHANNEL, calculate_dmx_values};
+use common::fixture::{MAX_CHANNEL, calculate_dmx_values};
 use crate::artnet::ArtnetInterface;
 
 const TARGET: &str = "255.255.255.255:6454";

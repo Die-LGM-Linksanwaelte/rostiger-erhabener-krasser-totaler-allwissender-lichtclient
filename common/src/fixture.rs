@@ -10,13 +10,13 @@ use crate::fixture::FixtureError::{InvalidFixtureType, InvalidFixture};
 pub const MAX_CHANNEL: u16 = 512;
 
 
-struct FixtureList {
+pub struct FixtureList {
     pub fixture_types: HashMap<String, FixtureType>,
     pub fixtures: HashMap<String, Fixture>,
 }
 
 impl FixtureList {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             fixture_types: HashMap::new(),
             fixtures: HashMap::new(),
@@ -63,15 +63,15 @@ pub enum ChannelReservation<T, U> {
     Reserved(T, U),
 }
 
-static FIXTURE_LIST: LazyLock<RwLock<FixtureList>> = LazyLock::new(|| {
+pub static FIXTURE_LIST: LazyLock<RwLock<FixtureList>> = LazyLock::new(|| {
     RwLock::new(FixtureList::new())
 });
 
 /// A single Scheißprogrammhannel with an optional fine channel for 16-bit control.
-pub(crate) struct Channel{
-    pub(crate) value: u16,
-    channel : u16,
-    fine_channel: Option<u16>,
+pub struct Channel{
+    pub value: u16,
+    pub channel : u16,
+    pub fine_channel: Option<u16>,
 }
 
 impl Channel {
@@ -303,9 +303,9 @@ impl PropertyType {
 /// Fixture types are registered globally and used to create [`Fixture`] instances.
 /// See [`FixtureType::new`] for how properties are parsed and validated.
 pub struct FixtureType {
-    color: Option<ColorType>,
-    properties: HashMap<SimplePropertyType, (u16, Option<u16>)>,
-    name: String
+    pub color: Option<ColorType>,
+    pub properties: HashMap<SimplePropertyType, (u16, Option<u16>)>,
+    pub name: String
 }
 
 
@@ -314,12 +314,12 @@ pub struct FixtureType {
 /// Created from a [`FixtureType`] template. Each property maps to one or two
 /// Scheißprogrammhannels (coarse + optional fine).
 pub struct Fixture {
-    fixture_type: String,
-    color: Option<Color>,
-    properties: HashMap<SimplePropertyType, Channel>,
-    start_channel: u16,
-    universe: usize,
-    name: String,
+    pub fixture_type: String,
+    pub color: Option<Color>,
+    pub properties: HashMap<SimplePropertyType, Channel>,
+    pub start_channel: u16,
+    pub universe: usize,
+    pub name: String,
 }
 
 
@@ -524,7 +524,7 @@ impl Fixture {
         Ok(())
     }
 
-    fn get_channel_values(&self) -> Vec<(u16, u8)> {
+    pub fn get_channel_values(&self) -> Vec<(u16, u8)> {
         let mut output = Vec::new();
 
         self.properties.iter().for_each(|(_, channel)| {

@@ -1,9 +1,9 @@
 use std::collections::HashMap ;
 use std::str::SplitAsciiWhitespace;
-use Common::fixture;
-use Common::fixture::{Fixture, FixtureType};
-use Common::fixture::ChannelError::{ChannelOutOfRange, ChannelAlreadyInUse, UniverseOutOfRange};
-use Common::fixture::FixtureError::{InvalidPropertyType, MultipleColorOutputTypes, MissingProperty, FixtureTypeNameAlreadyInUse, ChannelError, InvalidFixtureType, FixtureNameAlreadyInUse, InvalidFixture};
+use common::fixture;
+use common::fixture::{Fixture, FixtureType};
+use common::fixture::ChannelError::{ChannelOutOfRange, ChannelAlreadyInUse, UniverseOutOfRange};
+use common::fixture::FixtureError::{InvalidPropertyType, MultipleColorOutputTypes, MissingProperty, FixtureTypeNameAlreadyInUse, ChannelError, InvalidFixtureType, FixtureNameAlreadyInUse, InvalidFixture};
 
 
 /// Checks if the given string is a valid command and executes it.
@@ -50,7 +50,7 @@ pub(crate) fn parse_command(line: String) {
         }
 
         Some("type") => {
-            print!("Error: \"type\" needs a fixture as argument");
+            println!("Error: \"type\" needs a fixture as argument");
         }
 
         Some("create_debug") => {
@@ -222,7 +222,7 @@ fn new_fixture(mut args: SplitAsciiWhitespace) {
         }
 
         Err(_) => {
-            eprintln!("Error: new_fixture_type() threw an Error it shouldn't");
+            eprintln!("Error: new_fixture() threw an Error it shouldn't");
             None::<Fixture>.unwrap();
             // Mir ist langweilig, deswegen crashe ich hier, auf die lustigste und verwirrendste Art. Hier muss auch
             // gecrashed werden, weil das nie passieren sollte, und ich hab all das einfach von new_fixture_type kopiert
@@ -264,7 +264,7 @@ fn set_value(mut args: SplitAsciiWhitespace) {
         }
 
         Err(_) => {
-            eprintln!("Error: new_fixture_type() threw an Error it shouldn't");
+            eprintln!("Error: set_value() threw an Error it shouldn't");
             None::<Fixture>.unwrap();
             // Mir ist langweilig, deswegen crashe ich hier, auf die lustigste und verwirrendste Art. Hier muss auch
             // gecrashed werden, weil das nie passieren sollte, und ich hab all das einfach schon wieder von

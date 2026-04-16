@@ -1,7 +1,7 @@
 use std::io;
 use std::net::UdpSocket;
 use crate::interfaces::DmxInterface;
-use Common::fixture::MAX_CHANNEL;
+use common::fixture::MAX_CHANNEL;
 
 /// Interface for outputting to artnet. Uses no artnet-library, works only with UDP. Implements ['DmxInterface']
 pub(crate) struct ArtnetInterface {

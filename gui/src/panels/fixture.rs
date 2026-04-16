@@ -1,5 +1,5 @@
 use eframe::egui;
-use FixtureTest::fixture::{FIXTURE_LIST, SimplePropertyType};
+use common::fixture::{FIXTURE_LIST, SimplePropertyType};
 
 pub fn ui(ui: &mut egui::Ui, fixture_name: &str) {
     ui.heading(format!("🔦 {}", fixture_name));

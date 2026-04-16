@@ -3,21 +3,6 @@
 version = 4
 
 [[package]]
-name = "Common"
-version = "0.1.1"
-
-[[package]]
-name = "FixtureTest"
-version = "0.1.1"
-
-[[package]]
-name = "Interface"
-version = "0.1.0"
-dependencies = [
- "Common",
-]
-
-[[package]]
 name = "ab_glyph"
 version = "0.2.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -202,6 +187,13 @@ name = "arrayvec"
 version = "0.7.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7c02d123df017efcdfbd739ef81735b36c5ba83ec3c59c80a9d7ecc718f92e50"
+
+[[package]]
+name = "artnet_test"
+version = "0.1.0"
+dependencies = [
+ "common",
+]
 
 [[package]]
 name = "as-raw-xcb-connection"
@@ -748,6 +740,10 @@ dependencies = [
  "bytes",
  "memchr",
 ]
+
+[[package]]
+name = "common"
+version = "0.1.1"
 
 [[package]]
 name = "concurrent-queue"
@@ -1509,7 +1505,7 @@ dependencies = [
 name = "gui"
 version = "0.1.0"
 dependencies = [
- "FixtureTest",
+ "common",
  "eframe",
  "egui_dock",
 ]
@@ -1734,6 +1730,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "interface"
+version = "0.1.0"
+dependencies = [
+ "common",
+]
+
+[[package]]
 name = "io-lifetimes"
 version = "1.0.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1850,9 +1853,9 @@ dependencies = [
 name = "kernel"
 version = "0.1.1"
 dependencies = [
- "Common",
- "Interface",
+ "common",
  "gui",
+ "interface",
 ]
 
 [[package]]
