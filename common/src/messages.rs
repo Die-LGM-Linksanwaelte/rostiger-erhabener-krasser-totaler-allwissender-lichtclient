@@ -20,8 +20,8 @@ pub enum TcpMessage {
     setDeviceFixture,
     deleteDevice,
     setDeviceProperty {
-        property: ,
-        value: ,
+        //property: ,
+        //value: ,
     },
 
     loadProject,
