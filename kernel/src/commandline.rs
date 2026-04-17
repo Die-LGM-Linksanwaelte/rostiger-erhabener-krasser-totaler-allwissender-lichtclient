@@ -1,20 +1,20 @@
-use std::collections::HashMap ;
+use common::fixture;
+use common::fixture::ChannelError::{ChannelAlreadyInUse, ChannelOutOfRange, UniverseOutOfRange};
+use common::fixture::FixtureError::{
+    ChannelError, FixtureNameAlreadyInUse, FixtureTypeNameAlreadyInUse, InvalidFixture,
+    InvalidFixtureType, InvalidPropertyType, MissingProperty, MultipleColorOutputTypes,
+};
+use common::fixture::{Fixture, FixtureType};
+use std::collections::HashMap;
 use std::str::SplitAsciiWhitespace;
-use Common::fixture;
-use Common::fixture::{Fixture, FixtureType};
-use Common::fixture::ChannelError::{ChannelOutOfRange, ChannelAlreadyInUse, UniverseOutOfRange};
-use Common::fixture::FixtureError::{InvalidPropertyType, MultipleColorOutputTypes, MissingProperty, FixtureTypeNameAlreadyInUse, ChannelError, InvalidFixtureType, FixtureNameAlreadyInUse, InvalidFixture};
-
 
 /// Checks if the given string is a valid command and executes it.
 /// See '../help.txt` for a list of available commands.
 pub(crate) fn parse_command(line: String) {
-
     let mut line_iter = line.split_ascii_whitespace();
     //We want to check the arg count, we don't want the command counted
     let arg_count = line_iter.clone().count().saturating_sub(1);
     match line_iter.next() {
-
         Some("help") => {
             const HELP_TEXT: &str = include_str!("../help.txt");
             println!("{}", HELP_TEXT);
@@ -25,8 +25,10 @@ pub(crate) fn parse_command(line: String) {
         }
 
         Some("new") => {
-            println!("Error: \"new\"-Command needs a name for the new Fixture-Type, and then a list of properties with \
-            their channels.");
+            println!(
+                "Error: \"new\"-Command needs a name for the new Fixture-Type, and then a list of properties with \
+            their channels."
+            );
         }
 
         Some("add") if arg_count == 4 => {
@@ -34,7 +36,9 @@ pub(crate) fn parse_command(line: String) {
         }
 
         Some("add") => {
-            println!("Error: \"add\" needs a name, a fixture-type, a start-channel and a universe as arguments")
+            println!(
+                "Error: \"add\" needs a name, a fixture-type, a start-channel and a universe as arguments"
+            )
         }
 
         Some("set") if arg_count == 3 => {
@@ -74,7 +78,6 @@ pub(crate) fn parse_command(line: String) {
                 let args = format!("{} {} {}", name, property_type.clone(), value.clone());
                 let args = args.split_ascii_whitespace();
                 set_value(args);
-
             }
         }
 
@@ -98,7 +101,6 @@ fn new_fixture_type(mut args: SplitAsciiWhitespace) {
     //***Parsing the input to the right Format***
     //*******************************************
     while let Some(property) = args.next() {
-
         //We can do that without throwing an Error, because args has an even number of elements at this point
         let channel = args.next().unwrap();
         if let Err(_) = channel.parse::<u16>() {
@@ -111,7 +113,7 @@ fn new_fixture_type(mut args: SplitAsciiWhitespace) {
                 //fine-channels
 
                 // Cut off the _f
-                let property =  &property[..(property.len() - 2)];
+                let property = &property[..(property.len() - 2)];
                 if let Some((_, opt)) = properties.get_mut(property) {
                     if opt.is_none() {
                         *opt = Some(channel);
@@ -120,7 +122,9 @@ fn new_fixture_type(mut args: SplitAsciiWhitespace) {
                         return;
                     }
                 } else {
-                    eprintln!("{property} needs to define a normal Channel, before defining an fine-Channel");
+                    eprintln!(
+                        "{property} needs to define a normal Channel, before defining an fine-Channel"
+                    );
                     return;
                 }
             } else {
@@ -134,7 +138,6 @@ fn new_fixture_type(mut args: SplitAsciiWhitespace) {
                 }
             }
         }
-
     }
 
     //***********************************************************
@@ -144,10 +147,12 @@ fn new_fixture_type(mut args: SplitAsciiWhitespace) {
     match fixture_type {
         Err(ChannelError(ChannelAlreadyInUse(channel_type))) => {
             eprintln!("Error: The channel {channel_type} overlaps with another channel.");
-        },
+        }
 
         Err(ChannelError(ChannelOutOfRange)) => {
-            eprintln!("Error: A Channel is higher than the size of the Universe. This is not yet supported");
+            eprintln!(
+                "Error: A Channel is higher than the size of the Universe. This is not yet supported"
+            );
         }
 
         Err(FixtureTypeNameAlreadyInUse(name)) => {
@@ -169,7 +174,9 @@ fn new_fixture_type(mut args: SplitAsciiWhitespace) {
             // gecrashed werden, weil das nie passieren sollte
         }
 
-        Ok(()) => { println!("{} created successfully", name); }
+        Ok(()) => {
+            println!("{} created successfully", name);
+        }
     }
 }
 
@@ -197,20 +204,25 @@ fn new_fixture(mut args: SplitAsciiWhitespace) {
     //******************************************************
     //**Creating the fixture and handling possible Errors***
     //******************************************************
-    let fixture = Fixture::new(fixture_type_name,channel,universe, name.clone());
+    let fixture = Fixture::new(fixture_type_name, channel, universe, name.clone());
     match fixture {
         Err(ChannelError(ChannelOutOfRange)) => {
             eprintln!("Error: fixture overflowes out of this remaining universe");
         }
 
         Err(ChannelError(UniverseOutOfRange)) => {
-            panic!("Fatal Error: Fixture created in Universe that does not exist. Normally, the programm should \
-        automatically create an universe, but somehow, this hasn't happened");
+            panic!(
+                "Fatal Error: Fixture created in Universe that does not exist. Normally, the programm should \
+        automatically create an universe, but somehow, this hasn't happened"
+            );
         }
 
         Err(ChannelError(ChannelAlreadyInUse(overlapping_fixture))) => {
-            eprintln!("Error: At least one Channel of this fixture is overlapping with {}.\
-            Fixture has not been created.", overlapping_fixture);
+            eprintln!(
+                "Error: At least one Channel of this fixture is overlapping with {}.\
+            Fixture has not been created.",
+                overlapping_fixture
+            );
         }
 
         Err(InvalidFixtureType(fixture_type_name)) => {
@@ -228,7 +240,9 @@ fn new_fixture(mut args: SplitAsciiWhitespace) {
             // gecrashed werden, weil das nie passieren sollte, und ich hab all das einfach von new_fixture_type kopiert
         }
 
-        Ok(_) => { println!("{} created successfully", name); }
+        Ok(_) => {
+            println!("{} created successfully", name);
+        }
     }
 }
 
@@ -271,18 +285,20 @@ fn set_value(mut args: SplitAsciiWhitespace) {
             // new_fixture_type kopiert
         }
 
-        Ok(_) => { println!("Value changed successfully"); }
+        Ok(_) => {
+            println!("Value changed successfully");
+        }
     }
 }
-
 
 fn get_type(mut args: SplitAsciiWhitespace) {
     let fixture_name = args.next().unwrap().to_string();
 
     match Fixture::get_fixture_type_from_string(fixture_name.clone()) {
-        Ok(fixture_type) => println!("\"{fixture_name}\" is a fixture of the type \"{fixture_type}\""),
+        Ok(fixture_type) => {
+            println!("\"{fixture_name}\" is a fixture of the type \"{fixture_type}\"")
+        }
         Err(InvalidFixture(fixture)) => eprintln!("Error: \"{fixture}\" is not a valid Fixture"),
         Err(_) => panic!("Error: get_fixture_type_from_string() threw an Error it shouldn't"),
     }
 }
-
