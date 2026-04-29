@@ -7,28 +7,33 @@ pub mod universe;
 
 #[derive(Clone, PartialEq)]
 pub enum Tab {
-    Fixture(String),
-    Universe(u32),
+    Universe {
+        tab_id: u32,              // Die feste ID des Fensters (z.B. 0, 1, 2...)
+        selected_universe: u32    // Das Universum, das im Dropdown gewählt wurde
+    },
+    Fixture,
     Terminal,
     Settings,
 }
-
 impl Tab {
+    // Das ist das, was der Nutzer oben im Reiter liest:
     pub fn title(&self) -> String {
         match self {
-            Tab::Fixture(name) => format!("{}", name),
-            Tab::Universe(id) => format!("Universe {}", id),
             Tab::Terminal => "Terminal".to_string(),
+            Tab::Universe { selected_universe, .. } => format!("Universum {}", selected_universe),
             Tab::Settings => "Settings".to_string(),
+            _ => {String::from("penis")},
         }
     }
 
-    pub fn ui(&mut self, ui: &mut egui::Ui) {
+    // Das ist das, was wir 'egui' als versteckte ID geben:
+    pub fn unique_id(&self) -> String {
         match self {
-            Tab::Fixture(name) => fixture::ui(ui, name),
-            Tab::Universe(id) => universe::ui(ui, id, 5),
-            Tab::Terminal => terminal::ui(ui),
-            Tab::Settings => settings::ui(ui),
+            // Nutze hier zwingend die feste tab_id!
+            Tab::Universe { tab_id, .. } => format!("universe_tab_{}", tab_id),
+            Tab::Fixture => "fixture_tab".to_string(),
+            Tab::Terminal => "terminal_tab".to_string(),
+            Tab::Settings => "settings_tab".to_string(),
         }
     }
 }

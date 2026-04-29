@@ -1,12 +1,9 @@
 use eframe::egui;
 use egui_dock::{DockArea, DockState, TabViewer};
-// NodeIndex und HashMap wurden entfernt, da ungenutzt
 
 mod panels;
 use panels::Tab;
-
-#[allow(unused_imports)]
-use common::fixture::{Fixture, FixtureType, FIXTURE_LIST};
+use crate::panels::universe::UniversePanel;
 
 fn main() -> eframe::Result<()> {
     let options = eframe::NativeOptions {
@@ -24,18 +21,14 @@ fn main() -> eframe::Result<()> {
 }
 
 #[derive(PartialEq, Debug, Clone, Copy)]
-enum Theme {
-    Dark,
-    Light,
-}
+enum Theme { Dark, Light }
 
 struct MyApp {
     tree: DockState<Tab>,
     show_settings_window: bool,
-
-    // HIER: Deine neuen Variablen hinzufügen!
     username: String,
     current_theme: Theme,
+    pub next_tab_id: u32,
 }
 
 impl MyApp {
@@ -43,49 +36,41 @@ impl MyApp {
         Self {
             tree: DockState::new(vec![Tab::Terminal]),
             show_settings_window: false,
-
-            // HIER: Die Startwerte festlegen!
             username: "Default User".to_string(),
             current_theme: Theme::Dark,
+            next_tab_id: 1, // Start bei 1
         }
     }
 }
 
 impl eframe::App for MyApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // --- TOP BAR ---
         egui::TopBottomPanel::top("top_bar").show(ctx, |ui| {
             egui::menu::bar(ui, |ui| {
                 ui.menu_button("Projekt", |ui| {
-                    if ui.button("Import Project").clicked() {
-                        ui.close_menu();
-                    }
-                    if ui.button("Export Project").clicked() {
-                        ui.close_menu();
-                    }
-
-                    ui.separator();
-
                     if ui.button("Settings").clicked() {
                         self.show_settings_window = true;
                         ui.close_menu();
-                    }
-
-                    if ui.button("Close Project").clicked() {
-                        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                     }
                 });
 
                 ui.menu_button("Window", |ui| {
                     if ui.button("Universe").clicked() {
-                        self.tree
-                            .main_surface_mut()
-                            .push_to_focused_leaf(Tab::Universe(0));
+                        let new_id = self.next_tab_id;
+                        self.next_tab_id += 1;
+
+                        self.tree.main_surface_mut().push_to_focused_leaf(Tab::Universe {
+                            tab_id: new_id,
+                            selected_universe: 1,
+                        });
                         ui.close_menu();
                     }
                 });
             });
         });
 
+        // --- DOCKING AREA ---
         egui::CentralPanel::default().show(ctx, |ui| {
             let mut tab_viewer = MyTabViewer {};
             DockArea::new(&mut self.tree)
@@ -93,95 +78,77 @@ impl eframe::App for MyApp {
                 .show_inside(ui, &mut tab_viewer);
         });
 
+        // --- SETTINGS WINDOW (VIEWPORT) ---
         if self.show_settings_window {
-            // Wir fragen ab, ob der Viewport für die Einstellungen existiert.
-            // show_viewport_immediate gibt uns die Möglichkeit, auf Events zu reagieren.
             ctx.show_viewport_immediate(
                 egui::ViewportId::from_hash_of("settings_id"),
                 egui::ViewportBuilder::default()
-                    .with_title("R.E.K.T.A.L. Settings")
+                    .with_title("Settings")
                     .with_inner_size([450.0, 350.0]),
-                |ctx, class| {
+                |ctx, _| {
                     egui::CentralPanel::default().show(ctx, |ui| {
-                        egui::Grid::new("mein_einzigartiges_grid_id") // Jedes Grid braucht eine ID
-                            .num_columns(2) // Wir wollen 2 Spalten
-                            .spacing([40.0, 10.0]) // [horizontaler, vertikaler] Abstand
-                            .show(ui, |ui| {
-                                // --- ZEILE 1 ---
-                                ui.label("Name:");
-                                ui.text_edit_singleline(&mut self.username);
-                                ui.end_row(); // WICHTIG: Springt in die nächste Zeile
+                        egui::Grid::new("settings_grid").num_columns(2).show(ui, |ui| {
+                            ui.label("Name:");
+                            ui.text_edit_singleline(&mut self.username);
+                            ui.end_row();
 
-                                // --- ZEILE 2 ---
-                                ui.label("Theme:");
-                                egui::ComboBox::from_label("Design")
-                                    .selected_text(match self.current_theme {
-                                        Theme::Dark => "Dark",
-                                        Theme::Light => "Light",
-                                    })
-                                    .show_ui(ui, |ui| {
-                                        // Option 1: Dark Mode
-                                        if ui
-                                            .selectable_value(
-                                                &mut self.current_theme,
-                                                Theme::Dark,
-                                                "Dark",
-                                            )
-                                            .clicked()
-                                        {
-                                            ctx.set_visuals(egui::Visuals::dark());
-                                        }
-
-                                        // Option 2: Light Mode
-                                        if ui
-                                            .selectable_value(
-                                                &mut self.current_theme,
-                                                Theme::Light,
-                                                "Light",
-                                            )
-                                            .clicked()
-                                        {
-                                            ctx.set_visuals(egui::Visuals::light());
-                                        }
-                                    });
-                                ui.end_row();
-                            });
-                        ui.add_space(20.0);
+                            ui.label("Theme:");
+                            egui::ComboBox::from_id_source("theme_combo")
+                                .selected_text(format!("{:?}", self.current_theme))
+                                .show_ui(ui, |ui| {
+                                    if ui.selectable_value(&mut self.current_theme, Theme::Dark, "Dark").clicked() {
+                                        ctx.set_visuals(egui::Visuals::dark());
+                                    }
+                                    if ui.selectable_value(&mut self.current_theme, Theme::Light, "Light").clicked() {
+                                        ctx.set_visuals(egui::Visuals::light());
+                                    }
+                                });
+                            ui.end_row();
+                        });
                     });
-
-                    if ctx.input(|i| i.viewport().close_requested()) {
-                        // TODO: Einstellungen in Datei speichern
-                        todo!("Einstellungen in Datei speichern");
-                    }
                 },
             );
 
-            // Wir prüfen im Kontext des HAUPTFENSTERS, ob das Einstellungsfenster
-            // gerade ein Schließ-Event gesendet hat.
-            let is_closing = ctx.input(|i| {
-                i.raw
-                    .viewports
-                    .get(&egui::ViewportId::from_hash_of("settings_id"))
-                    .map_or(false, |v: &egui::ViewportInfo| v.close_requested())
-            });
-
-            if is_closing {
+            // Handle Closing
+            if ctx.input(|i| i.viewport().close_requested()) {
                 self.show_settings_window = false;
             }
         }
     }
 }
 
+// --- TAB VIEWER ---
 struct MyTabViewer;
 
 impl TabViewer for MyTabViewer {
     type Tab = Tab;
 
     fn title(&mut self, tab: &mut Self::Tab) -> egui::WidgetText {
-        tab.title().into()
+        match tab {
+            Tab::Terminal => "Terminal".into(),
+            Tab::Universe { selected_universe, .. } => format!("Universum {}", selected_universe).into(),
+            _ => {String::from("penis").into()}
+        }
+    }
+
+    // --- DIESE FUNKTION FEHLT WAHRSCHEINLICH ODER IST FALSCH ---
+    fn id(&mut self, tab: &mut Self::Tab) -> egui::Id {
+        match tab {
+            Tab::Terminal => egui::Id::new("terminal_unique"),
+            // Wir nutzen die tab_id als Basis für die EGUI ID
+            Tab::Universe { tab_id, .. } => egui::Id::new("uni_tab").with(tab_id),
+            _ => {String::from("penis").into()}
+        }
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, tab: &mut Self::Tab) {
-        tab.ui(ui);
+        match tab {
+            Tab::Universe { selected_universe, .. } => {
+                // Hier rufen wir dein Panel auf
+                UniversePanel::ui(ui, selected_universe, 10);
+            }
+            Tab::Terminal => { ui.label("Terminal"); }
+            _ => {}
+        }
     }
 }

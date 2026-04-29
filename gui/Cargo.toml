@@ -7,3 +7,6 @@ edition = "2021"
 eframe = "0.28"
 egui_dock = "0.13"
 common = { path = "../common" }
+egui_extras = "0.28"
+
+egui = "0.28"       # Oder 0.27, je nachdem was du nutzt
