@@ -1,9 +1,13 @@
 use eframe::egui;
 use egui_dock::{DockArea, DockState, TabViewer};
+use std::sync::mpsc;
 
+mod network;
 mod panels;
+
 use panels::Tab;
-use crate::panels::universe::UniversePanel;
+use crate::network::udp_client;
+use crate::network::udp_client::MAX_CHANNEL;
 
 fn main() -> eframe::Result<()> {
     let options = eframe::NativeOptions {
@@ -16,7 +20,8 @@ fn main() -> eframe::Result<()> {
     eframe::run_native(
         "Docking App",
         options,
-        Box::new(|_cc| Ok(Box::new(MyApp::new()))),
+        // HIER: Wir holen uns den egui::Context schon beim Start und geben ihn an MyApp weiter
+        Box::new(|cc| Ok(Box::new(MyApp::new(cc.egui_ctx.clone())))),
     )
 }
 
@@ -28,23 +33,45 @@ struct MyApp {
     show_settings_window: bool,
     username: String,
     current_theme: Theme,
-    pub next_tab_id: u32,
+    next_tab_id: u32,
+    dmx_receiver: mpsc::Receiver<(u8, [u8; MAX_CHANNEL])>,
 }
 
 impl MyApp {
-    fn new() -> Self {
+    // Nimmt jetzt den Context entgegen
+    fn new(ctx: egui::Context) -> Self {
+        let (dmx_sender, dmx_receiver) = mpsc::channel();
+
+        // Übergibt den Context direkt an den Listener
+        udp_client::start_udp_listener(None, dmx_sender, ctx)
+            .expect("Failed to start UDP listener");
+
         Self {
             tree: DockState::new(vec![Tab::Terminal]),
             show_settings_window: false,
             username: "Default User".to_string(),
             current_theme: Theme::Dark,
-            next_tab_id: 1, // Start bei 1
+            next_tab_id: 1,
+            dmx_receiver,
         }
     }
 }
 
 impl eframe::App for MyApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+
+        // --- DMX-Daten aus dem Puffer abholen ---
+        // (Der Context wurde bereits vom UDP-Thread geweckt, daher läuft diese Funktion jetzt)
+        while let Ok((universe_id, dmx_data)) = self.dmx_receiver.try_recv() {
+            for (_, tab) in self.tree.iter_all_tabs_mut() {
+                if let Tab::Universe(panel) = tab {
+                    if panel.selected_universe == universe_id {
+                        panel.dmx_data.copy_from_slice(&dmx_data);
+                    }
+                }
+            }
+        }
+
         // --- TOP BAR ---
         egui::TopBottomPanel::top("top_bar").show(ctx, |ui| {
             egui::menu::bar(ui, |ui| {
@@ -57,13 +84,11 @@ impl eframe::App for MyApp {
 
                 ui.menu_button("Window", |ui| {
                     if ui.button("Universe").clicked() {
-                        let new_id = self.next_tab_id;
+                        let new_tab_id = self.next_tab_id;
                         self.next_tab_id += 1;
 
-                        self.tree.main_surface_mut().push_to_focused_leaf(Tab::Universe {
-                            tab_id: new_id,
-                            selected_universe: 1,
-                        });
+                        let new_universe_panel = panels::universe::UniversePanel::new(new_tab_id);
+                        self.tree.main_surface_mut().push_to_focused_leaf(Tab::Universe(new_universe_panel));
                         ui.close_menu();
                     }
                 });
@@ -78,7 +103,7 @@ impl eframe::App for MyApp {
                 .show_inside(ui, &mut tab_viewer);
         });
 
-        // --- SETTINGS WINDOW (VIEWPORT) ---
+        // --- SETTINGS WINDOW ---
         if self.show_settings_window {
             ctx.show_viewport_immediate(
                 egui::ViewportId::from_hash_of("settings_id"),
@@ -109,7 +134,6 @@ impl eframe::App for MyApp {
                 },
             );
 
-            // Handle Closing
             if ctx.input(|i| i.viewport().close_requested()) {
                 self.show_settings_window = false;
             }
@@ -124,31 +148,14 @@ impl TabViewer for MyTabViewer {
     type Tab = Tab;
 
     fn title(&mut self, tab: &mut Self::Tab) -> egui::WidgetText {
-        match tab {
-            Tab::Terminal => "Terminal".into(),
-            Tab::Universe { selected_universe, .. } => format!("Universum {}", selected_universe).into(),
-            _ => {String::from("penis").into()}
-        }
-    }
-
-    // --- DIESE FUNKTION FEHLT WAHRSCHEINLICH ODER IST FALSCH ---
-    fn id(&mut self, tab: &mut Self::Tab) -> egui::Id {
-        match tab {
-            Tab::Terminal => egui::Id::new("terminal_unique"),
-            // Wir nutzen die tab_id als Basis für die EGUI ID
-            Tab::Universe { tab_id, .. } => egui::Id::new("uni_tab").with(tab_id),
-            _ => {String::from("penis").into()}
-        }
+        tab.title().into()
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, tab: &mut Self::Tab) {
-        match tab {
-            Tab::Universe { selected_universe, .. } => {
-                // Hier rufen wir dein Panel auf
-                UniversePanel::ui(ui, selected_universe, 10);
-            }
-            Tab::Terminal => { ui.label("Terminal"); }
-            _ => {}
-        }
+        tab.ui(ui);
+    }
+
+    fn id(&mut self, tab: &mut Self::Tab) -> egui::Id {
+        egui::Id::new(tab.unique_id())
     }
 }
