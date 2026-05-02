@@ -1,70 +1,126 @@
 use eframe::egui;
 use crate::network::udp_client::MAX_CHANNEL; // Use MAX_CHANNEL from udp_client
 
-#[derive(Clone, PartialEq)] // Added Clone and PartialEq
+#[derive(Clone, PartialEq)]
 pub struct UniversePanel {
-    pub tab_id: u32, // Unique ID for this specific panel instance
-    pub selected_universe: u8, // The DMX universe ID this panel is currently displaying
-    pub dmx_data: [u8; MAX_CHANNEL], // The DMX data for the selected universe
+    pub tab_id: u32,
+    pub selected_universe: u8,
+    pub dmx_data: [u8; MAX_CHANNEL],
+    pub settings_open: bool, // Neu: Status für das Einstellungsfenster
 }
 
 impl UniversePanel {
     pub fn new(tab_id: u32) -> Self {
         Self {
             tab_id,
-            selected_universe: 0, // Default to universe 0
+            selected_universe: 0,
             dmx_data: [0; MAX_CHANNEL],
+            settings_open: false, // Standardmäßig geschlossen
         }
     }
 
     pub fn ui(&mut self, ui: &mut egui::Ui) {
         let panel_id = ui.id().with(format!("universe_content_area_{}", self.tab_id));
+        // --- 1. EINSTELLUNGS-DIALOG ---
+        if self.settings_open {
+            let mut is_open = self.settings_open;
+
+            // Wir speichern das Ergebnis des Fensters
+            let window_response = egui::Window::new(format!("Einstellungen - Panel {}", self.tab_id))
+                .open(&mut is_open) // egui ändert is_open auf false, wenn das 'X' geklickt wird
+                .collapsible(false)
+                .resizable(false)
+                .pivot(egui::Align2::CENTER_CENTER)
+                .show(ui.ctx(), |ui| {
+                    ui.label("Hier kommen deine Einstellungen hin...");
+
+                    // Wenn der Button geklickt wird, geben wir das Signal zum Schließen
+                    if ui.button("Schließen").clicked() {
+                        return true; // Wir geben 'true' aus dem Closure zurück
+                    }
+                    false // Standardmäßig 'false' (offen bleiben)
+                });
+
+            // Prüfen: Wurde das 'X' geklickt?
+            self.settings_open = is_open;
+
+            // Prüfen: Wurde der "Schließen"-Button im Inneren geklickt?
+            if let Some(inner_response) = window_response {
+                if inner_response.inner.unwrap_or(false) {
+                    self.settings_open = false;
+                }
+            }
+        }
+
+        let panel_id = ui.id().with(format!("universe_content_area_{}", self.tab_id));
 
         ui.push_id(panel_id, |ui| {
-            // Quick selection buttons
-            ui.label("Schnellauswahl (0 bis 15)");
+            // --- 2. HEADER ZEILE MIT ZAHNRAD ---
+            ui.horizontal(|ui| {
+                ui.label("Schnellauswahl (0 bis 15)");
+
+                // Schiebt alles Folgende nach rechts
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    // Das Zahnrad-Symbol (Unicode oder Text)
+                    if ui.button("⚙").on_hover_text("Einstellungen öffnen").clicked() {
+                        self.settings_open = true;
+                    }
+                });
+            });
+
+            // Deine bisherige Schnellauswahl-Buttons
             ui.horizontal_wrapped(|ui| {
                 for i in 0..16 {
                     let is_selected = self.selected_universe == i;
                     if ui.selectable_label(is_selected, format!("{}", i)).clicked() {
                         self.selected_universe = i;
-
-                        // HIER DIE MAGIE: Setze alle 512 Kanäle sofort auf 0 zurück!
                         self.dmx_data = [0; MAX_CHANNEL];
-
                         ui.ctx().request_repaint();
                     }
                 }
             });
 
+            // ... innerhalb der ui() Funktion ...
+
             ui.add_space(8.0);
 
-            let cell_width: f32 = 50.0;
-            let spacing: f32 = 4.0;
+            // 1. Die aktuell verfügbare Breite messen
             let available_width = ui.available_width();
+            let cell_width = 50.0;
+            let spacing = 4.0;
 
-            let num_columns = (available_width / (cell_width + spacing)).floor() as usize;
-            let num_columns = num_columns.max(1);
+            // 2. Berechnen, wie viele Spalten WIRKLICH reinpassen
+            // Wir ziehen einen kleinen Puffer ab (z.B. 10.0), um die Scrollbar-Breite zu berücksichtigen
+            let usable_width = (available_width - 10.0).max(cell_width);
+            let num_columns = (usable_width / (cell_width + spacing)).floor() as usize;
+            let num_columns = num_columns.max(1); // Mindestens eine Spalte
 
             let row_height = 35.0 + spacing;
-            egui::ScrollArea::vertical().show_rows(ui, row_height, (MAX_CHANNEL / num_columns) + 1, |ui, row_range| {
-                egui::Grid::new(format!("dmx_grid_{}", self.tab_id))
-                    .num_columns(num_columns)
-                    .spacing([spacing, spacing])
-                    .striped(true)
-                    .show(ui, |ui| {
-                        for row in row_range {
-                            for col in 0..num_columns {
-                                let i = row * num_columns + col; // 0-indexed channel
-                                if i < MAX_CHANNEL {
-                                    draw_dmx_cell(ui, i + 1, self.dmx_data[i], cell_width); // Display 1-indexed channel
-                                }
-                            }
-                            ui.end_row();
-                        }
-                    });
-            });
+            let total_rows = (MAX_CHANNEL + num_columns - 1) / num_columns;
 
+            egui::ScrollArea::vertical()
+                .id_source(format!("dmx_scroll_{}", self.tab_id))
+                .auto_shrink([false, false])
+                .show_rows(ui, row_height, total_rows, |ui, row_range| {
+                    // 3. Das Grid mit der berechneten Spaltenanzahl erstellen
+                    egui::Grid::new(format!("dmx_grid_{}", self.tab_id))
+                        .num_columns(num_columns)
+                        .spacing([spacing, spacing])
+                        .min_col_width(cell_width)
+                        .show(ui, |ui| {
+                            for row in row_range {
+                                for col in 0..num_columns {
+                                    let i = row * num_columns + col;
+                                    if i < MAX_CHANNEL {
+                                        draw_dmx_cell(ui, i + 1, self.dmx_data[i], cell_width);
+                                    } else {
+                                        ui.label(""); // Füllzelle für die letzte Reihe
+                                    }
+                                }
+                                ui.end_row();
+                            }
+                        });
+                });
             fn draw_dmx_cell(ui: &mut egui::Ui, channel_num: usize, val: u8, width: f32) {
                 egui::Frame::none()
                     .fill(ui.visuals().faint_bg_color)
@@ -72,7 +128,7 @@ impl UniversePanel {
                     .inner_margin(2.0)
                     .stroke(ui.visuals().widgets.noninteractive.bg_stroke)
                     .show(ui, |ui| {
-                        ui.set_min_width(width);
+                        ui.set_width(width);
                         ui.vertical_centered(|ui| {
                             ui.label(egui::RichText::new(channel_num.to_string()).size(10.0).weak());
                             ui.label(egui::RichText::new(val.to_string()).strong().size(14.0).monospace());
