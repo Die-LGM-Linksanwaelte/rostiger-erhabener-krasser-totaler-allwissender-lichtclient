@@ -16,7 +16,7 @@ impl Tab {
     // Das ist das, was der Nutzer oben im Reiter liest:
     pub fn title(&self) -> String {
         match self {
-            Tab::Universe(panel) => format!("Universum {}", panel.selected_universe),
+            Tab::Universe(panel) => format!("Universe {}", panel.selected_universe),
             Tab::Terminal => "Terminal".to_string(),
             Tab::Settings => "Settings".to_string(),
         }

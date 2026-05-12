@@ -18,7 +18,7 @@ pub fn start_udp_listener(
     let addr = format!("0.0.0.0:{}", listen_port);
 
     let socket = UdpSocket::bind(&addr)?;
-    println!("UDP Listener gestartet auf {}", addr);
+    println!("UDP-Listener on adress {} startet!", addr);
 
     socket.set_read_timeout(Some(Duration::from_millis(100)))?;
 
@@ -43,7 +43,7 @@ pub fn start_udp_listener(
 
                                 // Daten erfolgreich an den UI Thread gesendet...
                                 if let Err(e) = dmx_sender.send((universe_id, dmx_data_array)) {
-                                    eprintln!("Fehler beim Senden der DMX-Daten: {}", e);
+                                    eprintln!("Error sending DMX-Data: {}", e);
                                     break; // Thread beenden, wenn der Receiver weg ist
                                 } else {
                                     // DER ENTSCHEIDENDE BEFEHL:
@@ -52,7 +52,7 @@ pub fn start_udp_listener(
                                 }
 
                             } else {
-                                eprintln!("Unvollständiges ArtDmx-Paket von {}", src_addr);
+                                eprintln!("Uncompleted ArtNet-Paket from {}", src_addr);
                             }
                         }
                     } else {
@@ -63,7 +63,7 @@ pub fn start_udp_listener(
                     // Timeout erreicht, einfach weitermachen
                 },
                 Err(e) => {
-                    eprintln!("Fehler beim Empfangen von UDP-Paketen: {}", e);
+                    eprintln!("Error receiving UDP-Packets: {}", e);
                     break;
                 }
             }
@@ -78,5 +78,5 @@ fn is_artnet_packet(data: &[u8]) -> bool {
 }
 
 fn handle_generic_packet(data: &[u8], src: std::net::SocketAddr) {
-    println!("Anderes UDP-Paket von {}: {} Bytes", src, data.len());
+    println!("Received other UDP-Packet {}: {} Bytes", src, data.len());
 }

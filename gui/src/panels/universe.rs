@@ -1,144 +1,157 @@
 use eframe::egui;
-use crate::network::udp_client::MAX_CHANNEL; // Use MAX_CHANNEL from udp_client
+use crate::network::udp_client::MAX_CHANNEL;
 
 #[derive(Clone, PartialEq)]
 pub struct UniversePanel {
     pub tab_id: u32,
     pub selected_universe: u8,
     pub dmx_data: [u8; MAX_CHANNEL],
-    pub settings_open: bool, // Neu: Status für das Einstellungsfenster
+    pub settings_open: bool,
+    pub min_pure_cell_width : f32,
 }
 
 impl UniversePanel {
     pub fn new(tab_id: u32) -> Self {
         Self {
             tab_id,
-            selected_universe: 0,
+            selected_universe: 1,
             dmx_data: [0; MAX_CHANNEL],
-            settings_open: false, // Standardmäßig geschlossen
+            settings_open: false,
+            min_pure_cell_width : 45.0, // gewünschte Mindestbreite
         }
     }
 
     pub fn ui(&mut self, ui: &mut egui::Ui) {
-        let panel_id = ui.id().with(format!("universe_content_area_{}", self.tab_id));
+        // --- 1. EINSTELLUNGS-DIALOG ---
         // --- 1. EINSTELLUNGS-DIALOG ---
         if self.settings_open {
             let mut is_open = self.settings_open;
 
-            // Wir speichern das Ergebnis des Fensters
-            let window_response = egui::Window::new(format!("Einstellungen - Panel {}", self.tab_id))
-                .open(&mut is_open) // egui ändert is_open auf false, wenn das 'X' geklickt wird
+            egui::Window::new(format!("Settings - Panel {}", self.tab_id))
+                .open(&mut is_open) // Hier wird is_open geliehen
                 .collapsible(false)
                 .resizable(false)
                 .pivot(egui::Align2::CENTER_CENTER)
                 .show(ui.ctx(), |ui| {
                     ui.label("Hier kommen deine Einstellungen hin...");
 
-                    // Wenn der Button geklickt wird, geben wir das Signal zum Schließen
-                    if ui.button("Schließen").clicked() {
-                        return true; // Wir geben 'true' aus dem Closure zurück
+                    // Statt is_open = false direkt zu setzen,
+                    // nutzen wir einfach das Rückgabesignal des Buttons
+                    if ui.button("Close").clicked() {
+                        // Wir können is_open hier nicht ändern, weil es oben geliehen ist.
+                        // Aber wir können das Schließen erzwingen, indem wir den Status
+                        // nach dem Window-Call setzen.
+                        return true;
                     }
-                    false // Standardmäßig 'false' (offen bleiben)
+                    false
                 });
 
-            // Prüfen: Wurde das 'X' geklickt?
+            // Wenn das 'X' am Fenster geklickt wurde, ist is_open jetzt false.
             self.settings_open = is_open;
 
-            // Prüfen: Wurde der "Schließen"-Button im Inneren geklickt?
-            if let Some(inner_response) = window_response {
-                if inner_response.inner.unwrap_or(false) {
-                    self.settings_open = false;
-                }
-            }
+            // Falls du den Button-Rückgabewert brauchst, um das Fenster zu schließen:
+            // (In deinem Fall reicht das .open(&mut is_open) eigentlich völlig aus,
+            // da egui is_open auf false setzt, wenn man das Fenster schließt.)
         }
 
         let panel_id = ui.id().with(format!("universe_content_area_{}", self.tab_id));
 
         ui.push_id(panel_id, |ui| {
-            // --- 2. HEADER ZEILE MIT ZAHNRAD ---
+            // --- HEADER ---
             ui.horizontal(|ui| {
-                ui.label("Schnellauswahl (0 bis 15)");
-
-                // Schiebt alles Folgende nach rechts
+                ui.label(egui::RichText::new("Universe").strong());
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    // Das Zahnrad-Symbol (Unicode oder Text)
-                    if ui.button("⚙").on_hover_text("Einstellungen öffnen").clicked() {
+                    if ui.button("⚙").on_hover_text("Settings").clicked() {
                         self.settings_open = true;
                     }
                 });
             });
 
-            // Deine bisherige Schnellauswahl-Buttons
+            // --- SCHNELLAUSWAHL ---
             ui.horizontal_wrapped(|ui| {
-                for i in 0..16 {
+                for i in 1..17 {
                     let is_selected = self.selected_universe == i;
                     if ui.selectable_label(is_selected, format!("{}", i)).clicked() {
                         self.selected_universe = i;
-                        self.dmx_data = [0; MAX_CHANNEL];
-                        ui.ctx().request_repaint();
+                        // Hier würde normalerweise das Daten-Update triggern
                     }
                 }
             });
 
-            // ... innerhalb der ui() Funktion ...
-
             ui.add_space(8.0);
 
-            // 1. Die aktuell verfügbare Breite messen
-            let available_width = ui.available_width();
-            let cell_width = 50.0;
+            // --- DMX GRID BERECHNUNG (FLUID & STRETCHED) ---
             let spacing = 4.0;
+            let frame_extra = 6.0;          // Platz für Margin und Stroke
+            let min_full_cell_width = self.min_pure_cell_width + frame_extra;
 
-            // 2. Berechnen, wie viele Spalten WIRKLICH reinpassen
-            // Wir ziehen einen kleinen Puffer ab (z.B. 10.0), um die Scrollbar-Breite zu berücksichtigen
-            let usable_width = (available_width - 10.0).max(cell_width);
-            let num_columns = (usable_width / (cell_width + spacing)).floor() as usize;
-            let num_columns = num_columns.max(1); // Mindestens eine Spalte
+            let available_width = (ui.available_width() - 4.0).max(0.0);
 
-            let row_height = 35.0 + spacing;
+            // 1. Wie viele Spalten passen bei der MINDEST-Breite rein?
+            // Wir addieren oben ein 'spacing' dazu, weil hinter der letzten Spalte kein Spacing mehr kommt.
+            let num_columns = ((available_width + spacing) / (min_full_cell_width + spacing)).floor() as usize;
+            let num_columns = num_columns.max(1);
+
+            // 2. STRETCH-MATHEMATIK: Berechne die exakte Breite, um den Platz 100% auszufüllen
+            // Der gesamte Platz für Abstände zwischen den Spalten:
+            let total_spacing = (num_columns.saturating_sub(1)) as f32 * spacing;
+            // Der Platz, der jetzt noch für die Zellen selbst übrig ist, geteilt durch die Anzahl der Zellen:
+            let stretched_full_cell_width = (available_width - total_spacing) / (num_columns as f32);
+
+            // Die reine Innen-Breite, die wir an draw_dmx_cell übergeben müssen:
+            let stretched_pure_cell_width = stretched_full_cell_width - frame_extra;
+
+            // 3. Zeilen und Höhe berechnen (wie vorhin, damit unten kein Loch entsteht)
             let total_rows = (MAX_CHANNEL + num_columns - 1) / num_columns;
+            let row_height = 30.0 + spacing; // Die echte Höhe deiner Zelle!
 
             egui::ScrollArea::vertical()
                 .id_source(format!("dmx_scroll_{}", self.tab_id))
                 .auto_shrink([false, false])
+                .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
                 .show_rows(ui, row_height, total_rows, |ui, row_range| {
-                    // 3. Das Grid mit der berechneten Spaltenanzahl erstellen
                     egui::Grid::new(format!("dmx_grid_{}", self.tab_id))
                         .num_columns(num_columns)
                         .spacing([spacing, spacing])
-                        .min_col_width(cell_width)
+                        // WICHTIG: Wir zwingen das Grid hier exakt auf unsere gestreckte Breite!
+                        .min_col_width(stretched_full_cell_width)
+                        .max_col_width(stretched_full_cell_width)
                         .show(ui, |ui| {
                             for row in row_range {
                                 for col in 0..num_columns {
                                     let i = row * num_columns + col;
                                     if i < MAX_CHANNEL {
-                                        draw_dmx_cell(ui, i + 1, self.dmx_data[i], cell_width);
+                                        // Hier übergeben wir jetzt die dynamisch berechnete "Stretched" Breite
+                                        draw_dmx_cell(ui, i + 1, self.dmx_data[i], stretched_pure_cell_width);
                                     } else {
-                                        ui.label(""); // Füllzelle für die letzte Reihe
+                                        ui.label("");
                                     }
                                 }
                                 ui.end_row();
                             }
                         });
                 });
-            fn draw_dmx_cell(ui: &mut egui::Ui, channel_num: usize, val: u8, width: f32) {
-                egui::Frame::none()
-                    .fill(ui.visuals().faint_bg_color)
-                    .rounding(2.0)
-                    .inner_margin(2.0)
-                    .stroke(ui.visuals().widgets.noninteractive.bg_stroke)
-                    .show(ui, |ui| {
-                        ui.set_width(width);
-                        ui.vertical_centered(|ui| {
-                            ui.label(egui::RichText::new(channel_num.to_string()).size(10.0).weak());
-                            ui.label(egui::RichText::new(val.to_string()).strong().size(14.0).monospace());
-                        });
-                    });
-            }
-
-            let width = ui.available_width();
-            ui.label(format!("Verfügbare Breite: {}px", width));
-            ui.separator();
         });
     }
+}
+
+fn draw_dmx_cell(ui: &mut egui::Ui, channel_num: usize, val: u8, width: f32) {
+    egui::Frame::none()
+        .fill(ui.visuals().faint_bg_color)
+        .rounding(2.0)
+        .inner_margin(2.0) // Dies verbraucht Platz INNERHALB der Zelle
+        .stroke(ui.visuals().widgets.noninteractive.bg_stroke)
+        .show(ui, |ui| {
+            // Wir setzen die Breite des Inhalts. Der Frame drumherum macht es breiter.
+            ui.set_width(width);
+            ui.vertical_centered(|ui| {
+                ui.label(egui::RichText::new(channel_num.to_string()).size(9.0).weak());
+                ui.label(
+                    egui::RichText::new(val.to_string())
+                        .strong()
+                        .size(14.0)
+                        .monospace(),
+                );
+            });
+        });
 }

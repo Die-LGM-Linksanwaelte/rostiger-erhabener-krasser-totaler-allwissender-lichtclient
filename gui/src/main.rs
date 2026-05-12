@@ -65,7 +65,7 @@ impl eframe::App for MyApp {
         while let Ok((universe_id, dmx_data)) = self.dmx_receiver.try_recv() {
             for (_, tab) in self.tree.iter_all_tabs_mut() {
                 if let Tab::Universe(panel) = tab {
-                    if panel.selected_universe == universe_id {
+                    if panel.selected_universe - 1 == universe_id {
                         panel.dmx_data.copy_from_slice(&dmx_data);
                     }
                 }
