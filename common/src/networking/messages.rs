@@ -21,6 +21,8 @@ pub enum TcpClientMessage {
         user_name: String,
         user_role: UserRole,
     },
+    
+    Disconnect,
 
     Subscribe {
         topic: SubscribeTopic,

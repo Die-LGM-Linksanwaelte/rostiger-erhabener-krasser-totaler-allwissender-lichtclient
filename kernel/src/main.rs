@@ -9,6 +9,8 @@ fn main() -> io::Result<()> {
         dmx_output_loop().expect("artnet loop failed");
     });
 
+    common::networking::server_sockets::activate_socket();
+
     loop {
         print!("> ");
         io::stdout().flush()?;
