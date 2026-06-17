@@ -3,7 +3,7 @@ use crate::fixture::FixtureType;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum TcpMessageAction {
-    // TODO: alle messages, die über tcp ausgetauscht werden, also z.b. addDevice, etc.
+    // TODO: alle aktionen, die über tcp auf den Server asugeführt werden sollen, also z.b. addDevice, etc.
     // über tcp nur das, was zeitunkritisch ist oder garantiert sicher ankommen muss
     CreateFixture {
         fixture_type: FixtureType,
