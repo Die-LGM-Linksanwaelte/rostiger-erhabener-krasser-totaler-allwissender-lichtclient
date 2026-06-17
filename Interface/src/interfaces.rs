@@ -1,12 +1,21 @@
 use std::net::UdpSocket;
 use std::io;
+use std::sync::{LazyLock, RwLock};
 use std::thread::sleep;
 use std::time::{Duration, Instant};
 use Common::fixture::{MAX_CHANNEL, calculate_dmx_values};
 use crate::artnet::ArtnetInterface;
+use crate::enttec_dmx_usb_pro::EnttecDmxPro;
 
 const TARGET: &str = "255.255.255.255:6454";
 const FREQUENCY: u64 = 23;
+
+pub static ENTEC: LazyLock<RwLock<Option<EnttecDmxPro>>> =
+    LazyLock::new(|| RwLock::new(None));
+
+pub static INTERFACES: LazyLock<RwLock<Vec<Box<dyn DmxInterface + Send + Sync>>>> =
+    LazyLock::new(|| RwLock::new(Vec::new()));
+
 
 /// Trait that should be implemented by all interfaces. For now, there is no possibility to modularly create a
 /// DmxInterface. TODO
@@ -39,6 +48,21 @@ pub fn dmx_output_loop() -> io::Result<()> {
         let universes = calculate_dmx_values();
 
         for (universe_index, data) in universes.iter().enumerate() {
+            if let Some(entec) = ENTEC.read().expect("Failed to get entec lock").as_ref() {
+                if universe_index <= 2 {
+                    if let Err(e) = entec.send_universe(universe_index as u16, data) {
+                        match e.kind() {
+                            io::ErrorKind::BrokenPipe => {
+                                println!("Broken pipe");
+                                let mut entec = ENTEC.write().expect("Failed to write entec lock");
+                                *entec = None;
+                            }
+
+                            _ => return Err(e),
+                        }
+                    };
+                }
+            }
             artnet_interface.send_universe(universe_index as u16, data)?;
         }
 
@@ -49,4 +73,10 @@ pub fn dmx_output_loop() -> io::Result<()> {
 
 
     }
+}
+
+pub fn setup_entec(port: &str) {
+    let mut entec = ENTEC.write().expect("Failed to write entec lock");
+
+    *entec = Some(EnttecDmxPro::new(port).expect(&format!("Failed to setup DMX port: {}", port)));
 }

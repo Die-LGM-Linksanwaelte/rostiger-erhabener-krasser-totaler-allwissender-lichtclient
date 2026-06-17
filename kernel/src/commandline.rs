@@ -84,6 +84,22 @@ pub(crate) fn parse_command(line: String) {
             println!("Add a breakpoint at this point in the code to check the datastructures");
         }
 
+        Some("list_ports") => {
+            let ports = Interface::enttec_dmx_usb_pro::EnttecDmxPro::list_ports();
+
+            ports.iter().for_each(|port| {
+                println!("{}", port);
+            })
+        }
+        
+        Some("setup_enttec") => {
+            Interface::interfaces::setup_entec(line_iter.next().unwrap());
+        }
+
+        Some("exit") => {
+            std::process::exit(0);
+        }
+
         _ => {
             println!("Unknown command. Please enter help, to get a list of commands.");
         }
