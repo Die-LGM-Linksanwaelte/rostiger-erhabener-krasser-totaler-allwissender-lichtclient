@@ -3,14 +3,14 @@
 version = 4
 
 [[package]]
-name = "Common"
+name = "common"
 version = "0.1.1"
 
 [[package]]
-name = "Interface"
+name = "interface"
 version = "0.1.0"
 dependencies = [
- "Common",
+ "common",
  "serialport",
 ]
 
@@ -62,8 +62,8 @@ dependencies = [
 name = "kernel"
 version = "0.1.1"
 dependencies = [
- "Common",
- "Interface",
+ "common",
+ "interface",
 ]
 
 [[package]]

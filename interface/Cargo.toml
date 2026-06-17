@@ -1,8 +1,8 @@
 [package]
-name = "Interface"
+name = "interface"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-Common = { path = "../Common" }
+common = { path = "../common" }
 serialport = "4.9.0"

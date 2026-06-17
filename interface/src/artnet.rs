@@ -1,7 +1,7 @@
+use crate::interfaces::DmxInterface;
+use common::fixture::MAX_CHANNEL;
 use std::io;
 use std::net::UdpSocket;
-use crate::interfaces::DmxInterface;
-use Common::fixture::MAX_CHANNEL;
 
 /// Interface for outputting to artnet. Uses no artnet-library, works only with UDP. Implements ['DmxInterface']
 pub(crate) struct ArtnetInterface {
@@ -21,12 +21,20 @@ impl ArtnetInterface {
     ///             Development. TODO
     pub fn new(socket: UdpSocket, target: String) -> Self {
         socket.set_broadcast(true).unwrap();
-        Self { socket,  target, sequence: 0 }
+        Self {
+            socket,
+            target,
+            sequence: 0,
+        }
     }
 }
 
 impl DmxInterface for ArtnetInterface {
-    fn send_universe(&self, local_universe_index: u16, data: &[u8;MAX_CHANNEL as usize]) -> io::Result<()> {
+    fn send_universe(
+        &self,
+        local_universe_index: u16,
+        data: &[u8; MAX_CHANNEL as usize],
+    ) -> io::Result<()> {
         let mut packet = Vec::with_capacity(18 + MAX_CHANNEL as usize);
 
         // Art-Net ID
