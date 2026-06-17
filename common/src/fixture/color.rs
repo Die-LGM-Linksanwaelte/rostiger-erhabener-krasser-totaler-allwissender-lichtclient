@@ -1,4 +1,5 @@
 use std::cmp::{max, min, PartialEq};
+use serde::{Deserialize, Serialize};
 use OutputType::{CMY, HSV, RGB};
 use crate::fixture::{Channel, ChannelError, FixtureError, PropertyType};
 
@@ -25,13 +26,14 @@ pub struct Color {
 ///
 /// Each color channel holds a DMX value and an optional second value
 /// for fine-grained 16-bit control
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ColorType {
     output_type: Option<OutputType>,
     color1: Option<(u16, Option<u16>)>,
     color2: Option<(u16, Option<u16>)>,
     color3: Option<(u16, Option<u16>)>,
 }
-#[derive(Debug, PartialEq, Copy, Clone)]
+#[derive(Debug, PartialEq, Copy, Clone, Serialize, Deserialize)]
 enum OutputType {
     RGB,
     HSV,
