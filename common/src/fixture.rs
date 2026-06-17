@@ -1,9 +1,12 @@
 #![allow(dead_code)]
-use crate::color::{Color, ColorPropertyType, ColorType};
+pub mod color;
+
+use color::{Color, ColorPropertyType, ColorType};
 use crate::fixture::ChannelReservation::{Empty, Pending, Reserved};
 use crate::fixture::FixtureError::{InvalidFixture, InvalidFixtureType};
 use std::collections::{HashMap, HashSet};
 use std::sync::{LazyLock, RwLock};
+
 
 /// The maximum number of DMX channels per universe (DMX512 standard).
 pub const MAX_CHANNEL: u16 = 512;

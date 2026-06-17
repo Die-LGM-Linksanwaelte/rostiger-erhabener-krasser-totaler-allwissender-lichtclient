@@ -1,5 +1,5 @@
 use std::cmp::{max, min, PartialEq};
-use crate::color::OutputType::{CMY, HSV, RGB};
+use OutputType::{CMY, HSV, RGB};
 use crate::fixture::{Channel, ChannelError, FixtureError, PropertyType};
 
 /// Represents a color with its channel values for all supported color models
@@ -116,7 +116,7 @@ impl ColorPropertyType {
 impl ColorType {
 
     /// Creates an empty [`ColorType`] with no output type or channels set.
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             output_type: None,
             color1: None,
@@ -137,7 +137,7 @@ impl ColorType {
     ///
     /// Returns [`FixtureError::MultipleColorOutputTypes`] if the channel belongs to a
     /// different color model than one already assigned (e.g. mixing RGB and HSV).
-    pub(crate) fn parse(&mut self, s: String, value: (u16, Option<u16>)) -> Result<bool, FixtureError> {
+    pub fn parse(&mut self, s: String, value: (u16, Option<u16>)) -> Result<bool, FixtureError> {
         let (new_type, slot) = match s.as_str() {
             "red"        => (RGB, 1),
             "green"      => (RGB, 2),
@@ -177,7 +177,7 @@ impl ColorType {
     }
 
     /// Returns `true` if at least one color channel has been set.
-    pub(crate) fn exists(&self) -> bool {
+    pub fn exists(&self) -> bool {
         self.output_type.is_some()
     }
 }
@@ -201,7 +201,7 @@ impl Color {
     /// # Errors
     ///
     /// Returns a [`ChannelError`] if any channel could not be created or reserved.
-    pub(crate) fn new(
+    pub fn new(
         color_type: &ColorType, device_channel: u16, universe: usize, fixture_name: &str
     ) -> Result<Self, ChannelError> {
         let default_value = if color_type.output_type == Some(CMY) {
