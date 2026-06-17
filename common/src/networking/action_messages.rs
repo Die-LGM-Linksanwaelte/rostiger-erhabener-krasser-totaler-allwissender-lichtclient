@@ -1,29 +1,30 @@
 use serde::{Deserialize, Serialize};
+use crate::fixture::FixtureType;
 
 #[derive(Serialize, Deserialize, Debug)]
-pub enum TcpMessage {
+pub enum TcpMessageAction {
     // TODO: alle messages, die über tcp ausgetauscht werden, also z.b. addDevice, etc.
     // über tcp nur das, was zeitunkritisch ist oder garantiert sicher ankommen muss
-    createFixture {
+    CreateFixture {
         fixture_type: FixtureType,
     },
 
-    createDevice {
+    CreateDevice {
         start_channel: u16,
         universe: usize,
         name: String,
     },
-    setDeviceAdress {
+    SetDeviceAdress {
         new_start_channel: u16,
         new_universe: usize,
     },
-    setDeviceFixture,
-    deleteDevice,
-    setDeviceProperty {
+    SetDeviceFixture,
+    DeleteDevice,
+    SetDeviceProperty {
         //property: ,
         //value: ,
     },
 
-    loadProject,
-    saveProject,
+    LoadProject,
+    SaveProject,
 }
