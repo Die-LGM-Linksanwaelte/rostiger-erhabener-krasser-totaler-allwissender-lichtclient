@@ -57,6 +57,8 @@ pub(crate) fn parse_command(line: String) {
             print!("Error: \"type\" needs a fixture as argument");
         }
 
+        //Temporary Commands, when GUI is here, this should be deleted.
+
         Some("create_debug") => {
             let args = "rgb red 0 green 1 blue 2".split_ascii_whitespace();
             new_fixture_type(args);
@@ -88,7 +90,7 @@ pub(crate) fn parse_command(line: String) {
         }
 
         Some("list_ports") => {
-            let ports = Interface::enttec_dmx_usb_pro::EnttecDmxPro::list_ports();
+            let ports = interface::enttec_dmx_usb_pro::EnttecDmxPro::list_ports();
 
             ports.iter().for_each(|port| {
                 println!("{}", port);
@@ -96,7 +98,7 @@ pub(crate) fn parse_command(line: String) {
         }
         
         Some("setup_enttec") => {
-            Interface::interfaces::setup_entec(line_iter.next().unwrap());
+            interface::interfaces::setup_entec(line_iter.next().unwrap());
         }
 
         Some("exit") => {

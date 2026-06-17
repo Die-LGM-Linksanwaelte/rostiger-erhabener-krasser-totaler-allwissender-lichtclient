@@ -3,7 +3,7 @@ use std::sync::Mutex;
 use std::time::Duration;
 
 use crate::interfaces::DmxInterface;
-use Common::fixture::MAX_CHANNEL;
+use common::fixture::MAX_CHANNEL;
 
 // Enttec DMX USB Pro – Nachrichtenformat (API v1.44)
 // [0x7E] [Label] [Len_LSB] [Len_MSB] [Data...] [0xE7]
