@@ -5,6 +5,4 @@ members = [
     "rektal",
     "kernel",
     "interface",
-    "common",
-    "gui",
-    "artnet_test"]
+    "common"]

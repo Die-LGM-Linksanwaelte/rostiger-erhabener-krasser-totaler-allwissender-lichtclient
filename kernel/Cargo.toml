@@ -6,4 +6,3 @@ edition = "2024"
 [dependencies]
 common = { path = "../common" }
 interface = { path = "../interface" }
-gui = { path = "../gui"}
