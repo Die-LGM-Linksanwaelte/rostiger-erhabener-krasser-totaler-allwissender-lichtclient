@@ -2,6 +2,7 @@
 #name = "R.E.K.T.A.L."
 resolver = "1"
 members = [
+    "gui",
     "rektal",
     "kernel",
     "interface",

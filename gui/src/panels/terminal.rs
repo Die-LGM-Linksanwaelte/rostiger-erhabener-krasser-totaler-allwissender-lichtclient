@@ -7,4 +7,6 @@ pub fn ui(ui: &mut egui::Ui) {
     egui::ScrollArea::vertical().show(ui, |ui| {
         ui.monospace("EDER stinkt");
     });
+
+    egui::
 }

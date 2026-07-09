@@ -6,6 +6,8 @@ use serde::{Deserialize, Serialize};
 pub enum SubscribeTopic {
     Universes,
     FixturePositions,
+    FixtureAdress,
+    
 }
 
 #[derive(Serialize, Deserialize, Debug)]

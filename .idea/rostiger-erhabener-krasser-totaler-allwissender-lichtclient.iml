@@ -7,6 +7,7 @@
       <sourceFolder url="file://$MODULE_DIR$/kernel/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/common/src" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/interface/src" isTestSource="false" />
+      <sourceFolder url="file://$MODULE_DIR$/gui/src" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/rektal-launcher/target" />
       <excludeFolder url="file://$MODULE_DIR$/rektal/target" />
       <excludeFolder url="file://$MODULE_DIR$/target" />
