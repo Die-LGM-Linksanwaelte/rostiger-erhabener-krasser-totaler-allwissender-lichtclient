@@ -22,7 +22,15 @@ fn main() -> io::Result<()> {
 
         let input = input.trim().to_string();
 
-        commandline::parse_command(input);
+        match parse_command(input) {
+            Ok(output) => {
+                println!("\x1b[32m{}\x1b[0m", output);
+            },
+
+            Err(output) => {
+                eprintln!("\x1b[33m{}\x1b[0m", output);
+            }
+        }
     }
 
     artnet_handle.join().unwrap();
