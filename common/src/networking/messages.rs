@@ -1,7 +1,23 @@
+use std::fmt;
+use std::fmt::Formatter;
+use std::hash::{DefaultHasher, Hash, Hasher};
 use serde::{Deserialize, Serialize};
+use crate::networking::connection_engine::SessionID;
 
+#[derive(Serialize, Deserialize, Debug)]
+pub struct HandshakeRequest {
+    pub magic_string: String, // Must always be "REKTAL" 
+    pub protocol_hash: String,
+    pub client_version: String,
+}
 
-//TODO: Add better topics when we know wich topics are subscribeworthy
+#[derive(Serialize, Deserialize, Debug)]
+pub enum HandshakeResponse {
+    Ok,
+    Mismatch { server_version: String },
+}
+
+//TODO: Add better topics when we know wich topics are subscribe worthy
 #[derive(Serialize, Deserialize, Debug)]
 pub enum SubscribeTopic {
     Universes,
@@ -16,17 +32,16 @@ pub enum UpdateMode {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum TcpClientMessage {
-    Connect {
+    Login {
         password: String,
         user_name: String,
         user_role: UserRole,
     },
-    
-    Disconnect,
 
-    Reconnect {
-        password: String,
-        user_id: u64,
+    Logout,
+
+    Relogin {
+        user_id: SessionID,
         clear_subscriptions: bool,
     },
 
@@ -39,7 +54,10 @@ pub enum TcpClientMessage {
         topic: SubscribeTopic,
     },
 
-    ExecuteCommand(String),
+    ExecuteCommand {
+        command: String,
+        terminal_id: u32
+    },
 
     RequestEdit(EditableResource),
 
@@ -51,9 +69,26 @@ pub enum TcpClientMessage {
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum TcpServerMessage {
-    AssignUserID(u64),
+    //Answer when sending anything without being logged in
+    Unauthenticated,
+    
+    //Login answers
+    LoginOk {token: SessionID},
+    LoginFailed {reason: String},
 
-    CommandOutput(Result<String, String>),
+    //Relogin answers
+    ReloginOk {token: SessionID},
+    ReloginFailed {reason: String},
+
+    //Logout answer
+    LogoutOk,
+
+    Kicked {reason: String},
+
+    CommandOutput {
+        answer: Result<String, String>,
+        terminal_id: u32
+    },
 
     TopicUpdate {
         topic: SubscribeTopic,
@@ -65,7 +100,7 @@ pub enum TcpServerMessage {
         current_data: Vec<u8>
     },
 
-    EditDeniend {
+    EditDenied {
         resource: EditableResource,
         reason: String
     },
@@ -73,18 +108,36 @@ pub enum TcpServerMessage {
 
 
 
-//Dummy Enum until i implement it right
+//Dummy Enum until I implement it right
 #[derive(Serialize, Deserialize, Debug)]
 pub enum EditableResource {
     Cuelist,
 }
 
 //This is only Temporarily here, will be moved to a different location once this location is programmed
-//Also, Interface may not belong here, thats why ist commented out, since it should be handled differently than the GUIs
-#[derive(Serialize, Deserialize, Debug)]
+//Also, Interface may not belong here, that's why ist commented out, since it should be handled differently than the GUIs
+#[derive(Serialize, Deserialize, Debug, Copy, Clone)]
 pub enum UserRole {
     Programmer,
     BlindProgrammer,
     Showrunner,
 //    Interface
+}
+
+impl fmt::Display for UserRole {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let text = match self {
+            UserRole::Programmer => "programmer",
+            UserRole::BlindProgrammer => "blind programmer",
+            UserRole::Showrunner => "showrunner",
+        };
+
+        write!(f, "{text}")
+    }
+}
+
+pub fn get_protocol_version() -> String {
+    let mut hasher = DefaultHasher::new();
+    include_bytes!("messages.rs").hash(&mut hasher);
+    hasher.finish().to_string()
 }
