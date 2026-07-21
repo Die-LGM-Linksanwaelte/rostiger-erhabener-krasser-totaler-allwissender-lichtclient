@@ -1,4 +1,10 @@
- use crate::network::tcp_message::TcpMessage;
+use crate::networking::messages::TcpServerMessage::CommandOutput;
+use crate::networking::messages::{
+    SubscribeTopic, TcpClientMessage, TcpServerMessage, UpdateMode, UserRole,
+};
+use std::io::{Read, Write};
+use std::net::{TcpListener, TcpStream};
+use std::thread;
 
 pub struct TcpClient {
     ip: String,
@@ -17,12 +23,10 @@ impl TcpClient {
         self.socket = std::net::TcpStream::connect().unwrap();
     }
 
-    pub fn send_message(&mut self, message: TcpMessage) {
+    pub fn send_message(&mut self, message: TcpClientMessage) {
         match message {
-            TcpMessage::createFixture() => {
-                self.socket
-                    .write_all(TcpMessage::createFixture().as_bytes())
-                    .unwrap();
+            TcpClientMessage::Connect { password, user_name, user_role } => {
+
             }
         }
     }

@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use crate::fixture::FixtureType;
+use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum TcpMessageAction {

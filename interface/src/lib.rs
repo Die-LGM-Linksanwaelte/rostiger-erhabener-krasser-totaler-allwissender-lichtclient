@@ -1,2 +1,2 @@
-pub mod interfaces;
 mod artnet;
+pub mod interfaces;

@@ -1,12 +1,12 @@
 #![allow(dead_code)]
 pub mod color;
 
-use color::{Color, ColorPropertyType, ColorType};
 use crate::fixture::ChannelReservation::{Empty, Pending, Reserved};
 use crate::fixture::FixtureError::{InvalidFixture, InvalidFixtureType};
+use color::{Color, ColorPropertyType, ColorType};
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::sync::{LazyLock, RwLock};
-use serde::{Deserialize, Serialize};
 
 /// The maximum number of DMX channels per universe (DMX512 standard).
 pub const MAX_CHANNEL: u16 = 512;
@@ -324,7 +324,7 @@ impl PropertyType {
 ///
 /// Fixture types are registered globally and used to create [`Fixture`] instances.
 /// See [`FixtureType::new`] for how properties are parsed and validated.
-#[derive(Debug,Serialize,Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct FixtureType {
     color: Option<ColorType>,
     properties: HashMap<SimplePropertyType, (u16, Option<u16>)>,

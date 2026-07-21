@@ -1,7 +1,7 @@
-use std::cmp::{max, min, PartialEq};
-use serde::{Deserialize, Serialize};
-use OutputType::{CMY, HSV, RGB};
 use crate::fixture::{Channel, ChannelError, FixtureError, PropertyType};
+use OutputType::{CMY, HSV, RGB};
+use serde::{Deserialize, Serialize};
+use std::cmp::{PartialEq, max, min};
 
 /// Represents a color with its channel values for all supported color models
 /// (RGB, CMY, and HSV).
@@ -37,7 +37,7 @@ pub struct ColorType {
 enum OutputType {
     RGB,
     HSV,
-    CMY
+    CMY,
 }
 
 /// Identifies a specific channel or property of a [`Color`].
@@ -51,7 +51,7 @@ pub enum ColorPropertyType {
     Yellow,
     Hue,
     Saturation,
-    Value
+    Value,
 }
 
 impl ColorPropertyType {
@@ -69,7 +69,7 @@ impl ColorPropertyType {
             (2, HSV) => Some(ColorPropertyType::Saturation),
             (3, HSV) => Some(ColorPropertyType::Value),
 
-            _ => None
+            _ => None,
         }
     }
 
@@ -110,13 +110,12 @@ impl ColorPropertyType {
             "hue" => Ok(ColorPropertyType::Hue),
             "saturation" => Ok(ColorPropertyType::Saturation),
             "value" => Ok(ColorPropertyType::Value),
-            _ => Err(FixtureError::InvalidPropertyType(property.to_string()))
+            _ => Err(FixtureError::InvalidPropertyType(property.to_string())),
         }
     }
 }
 
 impl ColorType {
-
     /// Creates an empty [`ColorType`] with no output type or channels set.
     pub fn new() -> Self {
         Self {
@@ -141,26 +140,27 @@ impl ColorType {
     /// different color model than one already assigned (e.g. mixing RGB and HSV).
     pub fn parse(&mut self, s: String, value: (u16, Option<u16>)) -> Result<bool, FixtureError> {
         let (new_type, slot) = match s.as_str() {
-            "red"        => (RGB, 1),
-            "green"      => (RGB, 2),
-            "blue"       => (RGB, 3),
+            "red" => (RGB, 1),
+            "green" => (RGB, 2),
+            "blue" => (RGB, 3),
 
-            "cyan"       => (CMY, 1),
-            "magenta"    => (CMY, 2),
-            "yellow"     => (CMY, 3),
+            "cyan" => (CMY, 1),
+            "magenta" => (CMY, 2),
+            "yellow" => (CMY, 3),
 
-            "hue"        => (HSV, 1),
+            "hue" => (HSV, 1),
             "saturation" => (HSV, 2),
-            "value"      => (HSV, 3),
+            "value" => (HSV, 3),
 
             _ => return Ok(false),
         };
 
         if let Some(old_type) = self.output_type {
             if old_type != new_type {
-                return Err(FixtureError::MultipleColorOutputTypes(
-                   format!("{s} is incompatible with {:?}", old_type)
-                ));
+                return Err(FixtureError::MultipleColorOutputTypes(format!(
+                    "{s} is incompatible with {:?}",
+                    old_type
+                )));
             }
         }
 
@@ -170,7 +170,7 @@ impl ColorType {
             1 => &mut self.color1,
             2 => &mut self.color2,
             3 => &mut self.color3,
-            _ => unreachable!()
+            _ => unreachable!(),
         };
 
         *target = Some(value);
@@ -185,7 +185,6 @@ impl ColorType {
 }
 
 impl Color {
-
     /// Creates a [`Color`] from a [`ColorType`] template and reserves the required DMXChannels.
     ///
     /// Called internally by [`Fixture::new`].
@@ -204,7 +203,10 @@ impl Color {
     ///
     /// Returns a [`ChannelError`] if any channel could not be created or reserved.
     pub fn new(
-        color_type: &ColorType, device_channel: u16, universe: usize, fixture_name: &str
+        color_type: &ColorType,
+        device_channel: u16,
+        universe: usize,
+        fixture_name: &str,
     ) -> Result<Self, ChannelError> {
         let default_value = if color_type.output_type == Some(CMY) {
             u16::MAX
@@ -215,19 +217,20 @@ impl Color {
             unreachable!();
         };
 
-        let color1 = color_type.color1
+        let color1 = color_type
+            .color1
             .map(|c| Channel::new(c, default_value, device_channel))
             .transpose()?;
-        let color2 = color_type.color2
+        let color2 = color_type
+            .color2
             .map(|c| Channel::new(c, default_value, device_channel))
             .transpose()?;
-        let color3 = color_type.color3
-            .map(|c| Channel::new(c,default_value, device_channel))
+        let color3 = color_type
+            .color3
+            .map(|c| Channel::new(c, default_value, device_channel))
             .transpose()?;
 
         let output_type = color_type.output_type.unwrap();
-
-
 
         if let Some(color) = &color1 {
             color.reserve_pending(fixture_name, universe)?;
@@ -252,9 +255,6 @@ impl Color {
             color.reserve_final(fixture_name, universe, property);
         }
 
-
-
-
         Ok(Self {
             output_type,
             color1,
@@ -269,10 +269,9 @@ impl Color {
             hue: 0,
             saturation: 0,
             value: 0,
-
         })
     }
-    
+
     fn set_color(&mut self) {
         let (v1, v2, v3) = match self.output_type {
             RGB => (self.red, self.green, self.blue),
@@ -306,7 +305,7 @@ impl Color {
         self.saturation = if max == 0 {
             0
         } else {
-            ( (delta as f32 * u16::MAX as f32) / max as f32 ).round() as u16
+            ((delta as f32 * u16::MAX as f32) / max as f32).round() as u16
         };
         let mut hue: i32 = (u16::MAX as f32 / 6.0_f32
             * (if delta == 0 {
@@ -324,7 +323,7 @@ impl Color {
         }
 
         self.hue = hue as u16;
-        
+
         self.set_color()
     }
 
@@ -336,7 +335,7 @@ impl Color {
         let c = (value as f32 * (saturation as f32 / u16::MAX as f32)).round() as u16;
         let m = value.saturating_sub(c);
         let h = hue as f32 / (u16::MAX as f32 / 6f32);
-        let x = ( c as f32 * (1.0 - ((h % 2.0) - 1.0).abs()) ).round() as u16;
+        let x = (c as f32 * (1.0 - ((h % 2.0) - 1.0).abs())).round() as u16;
 
         let (r, g, b) = match h {
             n if n < 1.0 => (c, x, 0),
@@ -345,7 +344,7 @@ impl Color {
             n if n < 4.0 => (0, x, c),
             n if n < 5.0 => (x, 0, c),
             n if n <= 6.0 => (c, 0, x),
-            _ => (0, 0, 0)
+            _ => (0, 0, 0),
         };
 
         self.red = r.saturating_add(m);
@@ -354,8 +353,8 @@ impl Color {
 
         self.cyan = u16::MAX - self.red;
         self.magenta = u16::MAX - self.green;
-        self.yellow= u16::MAX - self.blue;
-        
+        self.yellow = u16::MAX - self.blue;
+
         self.set_color()
     }
 
@@ -383,15 +382,8 @@ impl Color {
         match output_type {
             RGB => self.set_rgb(value1, value2, value3),
             HSV => self.set_hsv(value1, value2, value3),
-            CMY => self.set_rgb(
-                u16::MAX - value1,
-                u16::MAX - value2,
-                u16::MAX - value3
-            ),
+            CMY => self.set_rgb(u16::MAX - value1, u16::MAX - value2, u16::MAX - value3),
         }
-
-
-
     }
 
     /// Returns the current DMX output values of all active color channels.
@@ -422,8 +414,6 @@ impl Color {
             }
         }
 
-
         output
-
     }
 }

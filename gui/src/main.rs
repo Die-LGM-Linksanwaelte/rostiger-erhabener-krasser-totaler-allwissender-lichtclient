@@ -5,9 +5,9 @@ use std::sync::mpsc;
 mod network;
 mod panels;
 
-use panels::Tab;
 use crate::network::udp_client;
 use crate::network::udp_client::MAX_CHANNEL;
+use panels::Tab;
 
 fn main() -> eframe::Result<()> {
     let options = eframe::NativeOptions {
@@ -26,7 +26,10 @@ fn main() -> eframe::Result<()> {
 }
 
 #[derive(PartialEq, Debug, Clone, Copy)]
-enum Theme { Dark, Light }
+enum Theme {
+    Dark,
+    Light,
+}
 
 struct MyApp {
     tree: DockState<Tab>,
@@ -46,8 +49,11 @@ impl MyApp {
         udp_client::start_udp_listener(None, dmx_sender, ctx)
             .expect("Failed to start UDP listener");
 
+        // Erstelle eine neue TerminalPanel-Instanz für den initialen Tab
+        let initial_terminal_panel = panels::terminal::TerminalPanel::new(0);
+
         Self {
-            tree: DockState::new(vec![Tab::Terminal]),
+            tree: DockState::new(vec![Tab::Terminal(initial_terminal_panel)]), // Hier die Instanz verwenden
             show_settings_window: false,
             username: "Default User".to_string(),
             current_theme: Theme::Dark,
@@ -59,7 +65,6 @@ impl MyApp {
 
 impl eframe::App for MyApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-
         // --- DMX-Daten aus dem Puffer abholen ---
         // (Der Context wurde bereits vom UDP-Thread geweckt, daher läuft diese Funktion jetzt)
         while let Ok((universe_id, dmx_data)) = self.dmx_receiver.try_recv() {
@@ -88,10 +93,21 @@ impl eframe::App for MyApp {
                         self.next_tab_id += 1;
 
                         let new_universe_panel = panels::universe::UniversePanel::new(new_tab_id);
-                        self.tree.main_surface_mut().push_to_focused_leaf(Tab::Universe(new_universe_panel));
+                        self.tree
+                            .main_surface_mut()
+                            .push_to_focused_leaf(Tab::Universe(new_universe_panel));
                         ui.close_menu();
                     }
                 });
+            });
+        });
+
+        egui::TopBottomPanel::bottom("bottom_bar").show(ctx, |ui| {
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::TOP), |ui| {
+                ui.label(format!(
+                    "R.E.K.T.A.L. Version: {}",
+                    env!("CARGO_PKG_VERSION").to_string()
+                ));
             });
         });
 
@@ -105,6 +121,7 @@ impl eframe::App for MyApp {
 
         // --- SETTINGS WINDOW ---
         if self.show_settings_window {
+            //TODO: verschieben in eine eigene datei.
             ctx.show_viewport_immediate(
                 egui::ViewportId::from_hash_of("settings_id"),
                 egui::ViewportBuilder::default()
@@ -112,29 +129,46 @@ impl eframe::App for MyApp {
                     .with_inner_size([450.0, 350.0]),
                 |ctx, _| {
                     egui::CentralPanel::default().show(ctx, |ui| {
-                        egui::Grid::new("settings_grid").num_columns(2).show(ui, |ui| {
-                            ui.label("Name:");
-                            ui.text_edit_singleline(&mut self.username);
-                            ui.end_row();
+                        egui::Grid::new("settings_grid")
+                            .num_columns(2)
+                            .show(ui, |ui| {
+                                ui.label("Name:");
+                                ui.text_edit_singleline(&mut self.username);
+                                ui.end_row();
 
-                            ui.label("Theme:");
-                            egui::ComboBox::from_id_source("theme_combo")
-                                .selected_text(format!("{:?}", self.current_theme))
-                                .show_ui(ui, |ui| {
-                                    if ui.selectable_value(&mut self.current_theme, Theme::Dark, "Dark").clicked() {
-                                        ctx.set_visuals(egui::Visuals::dark());
-                                    }
-                                    if ui.selectable_value(&mut self.current_theme, Theme::Light, "Light").clicked() {
-                                        ctx.set_visuals(egui::Visuals::light());
-                                    }
-                                });
-                            ui.end_row();
-                        });
+                                ui.label("Theme:");
+                                egui::ComboBox::from_id_source("theme_combo")
+                                    .selected_text(format!("{:?}", self.current_theme))
+                                    .show_ui(ui, |ui| {
+                                        if ui
+                                            .selectable_value(
+                                                &mut self.current_theme,
+                                                Theme::Dark,
+                                                "Dark",
+                                            )
+                                            .clicked()
+                                        {
+                                            ctx.set_visuals(egui::Visuals::dark());
+                                        }
+                                        if ui
+                                            .selectable_value(
+                                                &mut self.current_theme,
+                                                Theme::Light,
+                                                "Light",
+                                            )
+                                            .clicked()
+                                        {
+                                            ctx.set_visuals(egui::Visuals::light());
+                                        }
+                                    });
+                                ui.end_row();
+                            });
                     });
                 },
             );
 
             if ctx.input(|i| i.viewport().close_requested()) {
+                //TODO: fenster schließt sich nicht. button funktioniert nicht!
                 self.show_settings_window = false;
             }
         }

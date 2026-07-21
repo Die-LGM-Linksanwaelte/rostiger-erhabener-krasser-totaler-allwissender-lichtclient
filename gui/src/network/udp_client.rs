@@ -1,9 +1,9 @@
-use std::net::UdpSocket;
+use eframe::egui;
 use std::io;
-use std::thread;
-use std::time::Duration;
+use std::net::UdpSocket;
 use std::sync::mpsc::Sender;
-use eframe::egui; // Hinzugefügt, um den Context zu kennen
+use std::thread;
+use std::time::Duration; // Hinzugefügt, um den Context zu kennen
 
 const ARTNET_PORT: u16 = 6454;
 const ARTNET_HEADER: &[u8; 8] = b"Art-Net\0";
@@ -39,7 +39,9 @@ pub fn start_udp_listener(
                             if data.len() >= dmx_start_index + dmx_length {
                                 let mut dmx_data_array = [0; MAX_CHANNEL];
                                 let actual_dmx_len = dmx_length.min(MAX_CHANNEL);
-                                dmx_data_array[..actual_dmx_len].copy_from_slice(&data[dmx_start_index..dmx_start_index + actual_dmx_len]);
+                                dmx_data_array[..actual_dmx_len].copy_from_slice(
+                                    &data[dmx_start_index..dmx_start_index + actual_dmx_len],
+                                );
 
                                 // Daten erfolgreich an den UI Thread gesendet...
                                 if let Err(e) = dmx_sender.send((universe_id, dmx_data_array)) {
@@ -50,7 +52,6 @@ pub fn start_udp_listener(
                                     // Wecke die GUI SOFORT auf! Egal wo die Maus ist.
                                     ctx.request_repaint();
                                 }
-
                             } else {
                                 eprintln!("Uncompleted ArtNet-Paket from {}", src_addr);
                             }
@@ -58,10 +59,10 @@ pub fn start_udp_listener(
                     } else {
                         handle_generic_packet(data, src_addr);
                     }
-                },
+                }
                 Err(ref e) if e.kind() == io::ErrorKind::WouldBlock => {
                     // Timeout erreicht, einfach weitermachen
-                },
+                }
                 Err(e) => {
                     eprintln!("Error receiving UDP-Packets: {}", e);
                     break;

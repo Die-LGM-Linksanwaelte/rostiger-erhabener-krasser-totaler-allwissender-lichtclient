@@ -1,5 +1,5 @@
-use eframe::egui;
 use crate::network::udp_client::MAX_CHANNEL;
+use eframe::egui;
 
 #[derive(Clone, PartialEq)]
 pub struct UniversePanel {
@@ -7,54 +7,43 @@ pub struct UniversePanel {
     pub selected_universe: u8,
     pub dmx_data: [u8; MAX_CHANNEL],
     pub settings_open: bool,
-    pub min_pure_cell_width : f32,
+    pub min_pure_cell_width: f32,
 }
 
 impl UniversePanel {
+    //TODO: refractoring, einzelne methoden usw.
     pub fn new(tab_id: u32) -> Self {
         Self {
             tab_id,
             selected_universe: 1,
             dmx_data: [0; MAX_CHANNEL],
             settings_open: false,
-            min_pure_cell_width : 45.0, // gewünschte Mindestbreite
+            min_pure_cell_width: 45.0, // gewünschte Mindestbreite
         }
     }
 
     pub fn ui(&mut self, ui: &mut egui::Ui) {
         // --- 1. EINSTELLUNGS-DIALOG ---
-        // --- 1. EINSTELLUNGS-DIALOG ---
         if self.settings_open {
+            //TODO save/ discard button hinzufügen, siehe auch: terminal panel
             let mut is_open = self.settings_open;
 
-            egui::Window::new(format!("Settings - Panel {}", self.tab_id))
+            egui::Window::new(format!("Settings - Panel {}", self.tab_id)) //TODO: Einstellungsmöglichkeiten hinzufügen
                 .open(&mut is_open) // Hier wird is_open geliehen
                 .collapsible(false)
                 .resizable(false)
                 .pivot(egui::Align2::CENTER_CENTER)
                 .show(ui.ctx(), |ui| {
                     ui.label("Hier kommen deine Einstellungen hin...");
-
-                    // Statt is_open = false direkt zu setzen,
-                    // nutzen wir einfach das Rückgabesignal des Buttons
-                    if ui.button("Close").clicked() {
-                        // Wir können is_open hier nicht ändern, weil es oben geliehen ist.
-                        // Aber wir können das Schließen erzwingen, indem wir den Status
-                        // nach dem Window-Call setzen.
-                        return true;
-                    }
                     false
                 });
 
-            // Wenn das 'X' am Fenster geklickt wurde, ist is_open jetzt false.
             self.settings_open = is_open;
-
-            // Falls du den Button-Rückgabewert brauchst, um das Fenster zu schließen:
-            // (In deinem Fall reicht das .open(&mut is_open) eigentlich völlig aus,
-            // da egui is_open auf false setzt, wenn man das Fenster schließt.)
         }
 
-        let panel_id = ui.id().with(format!("universe_content_area_{}", self.tab_id));
+        let panel_id = ui
+            .id()
+            .with(format!("universe_content_area_{}", self.tab_id));
 
         ui.push_id(panel_id, |ui| {
             // --- HEADER ---
@@ -82,21 +71,23 @@ impl UniversePanel {
 
             // --- DMX GRID BERECHNUNG (FLUID & STRETCHED) ---
             let spacing = 4.0;
-            let frame_extra = 6.0;          // Platz für Margin und Stroke
+            let frame_extra = 6.0; // Platz für Margin und Stroke
             let min_full_cell_width = self.min_pure_cell_width + frame_extra;
 
             let available_width = (ui.available_width() - 4.0).max(0.0);
 
             // 1. Wie viele Spalten passen bei der MINDEST-Breite rein?
             // Wir addieren oben ein 'spacing' dazu, weil hinter der letzten Spalte kein Spacing mehr kommt.
-            let num_columns = ((available_width + spacing) / (min_full_cell_width + spacing)).floor() as usize;
+            let num_columns =
+                ((available_width + spacing) / (min_full_cell_width + spacing)).floor() as usize;
             let num_columns = num_columns.max(1);
 
             // 2. STRETCH-MATHEMATIK: Berechne die exakte Breite, um den Platz 100% auszufüllen
             // Der gesamte Platz für Abstände zwischen den Spalten:
             let total_spacing = (num_columns.saturating_sub(1)) as f32 * spacing;
             // Der Platz, der jetzt noch für die Zellen selbst übrig ist, geteilt durch die Anzahl der Zellen:
-            let stretched_full_cell_width = (available_width - total_spacing) / (num_columns as f32);
+            let stretched_full_cell_width =
+                (available_width - total_spacing) / (num_columns as f32);
 
             // Die reine Innen-Breite, die wir an draw_dmx_cell übergeben müssen:
             let stretched_pure_cell_width = stretched_full_cell_width - frame_extra;
@@ -122,7 +113,12 @@ impl UniversePanel {
                                     let i = row * num_columns + col;
                                     if i < MAX_CHANNEL {
                                         // Hier übergeben wir jetzt die dynamisch berechnete "Stretched" Breite
-                                        draw_dmx_cell(ui, i + 1, self.dmx_data[i], stretched_pure_cell_width);
+                                        draw_dmx_cell(
+                                            ui,
+                                            i + 1,
+                                            self.dmx_data[i],
+                                            stretched_pure_cell_width,
+                                        );
                                     } else {
                                         ui.label("");
                                     }
@@ -135,6 +131,7 @@ impl UniversePanel {
     }
 }
 
+///function that draws a single DMX-Channel-Cell
 fn draw_dmx_cell(ui: &mut egui::Ui, channel_num: usize, val: u8, width: f32) {
     egui::Frame::none()
         .fill(ui.visuals().faint_bg_color)
@@ -145,7 +142,11 @@ fn draw_dmx_cell(ui: &mut egui::Ui, channel_num: usize, val: u8, width: f32) {
             // Wir setzen die Breite des Inhalts. Der Frame drumherum macht es breiter.
             ui.set_width(width);
             ui.vertical_centered(|ui| {
-                ui.label(egui::RichText::new(channel_num.to_string()).size(9.0).weak());
+                ui.label(
+                    egui::RichText::new(channel_num.to_string())
+                        .size(9.0)
+                        .weak(),
+                );
                 ui.label(
                     egui::RichText::new(val.to_string())
                         .strong()

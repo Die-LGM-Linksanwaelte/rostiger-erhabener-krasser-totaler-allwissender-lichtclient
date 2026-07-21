@@ -1,15 +1,14 @@
 use eframe::egui;
 
-pub mod settings;
 pub mod terminal;
 pub mod universe;
-use universe::UniversePanel; // Importiere UniversePanel
+use terminal::TerminalPanel;
+use universe::UniversePanel; // Importiere TerminalPanel
 
 #[derive(Clone, PartialEq)]
 pub enum Tab {
-    Universe(UniversePanel), // Hält jetzt eine Instanz von UniversePanel
-    Terminal,
-    Settings,
+    Universe(UniversePanel),
+    Terminal(TerminalPanel),
 }
 
 impl Tab {
@@ -17,8 +16,7 @@ impl Tab {
     pub fn title(&self) -> String {
         match self {
             Tab::Universe(panel) => format!("Universe {}", panel.selected_universe),
-            Tab::Terminal => "Terminal".to_string(),
-            Tab::Settings => "Settings".to_string(),
+            Tab::Terminal(_) => "Terminal".to_string(),
         }
     }
 
@@ -26,16 +24,16 @@ impl Tab {
     pub fn unique_id(&self) -> String {
         match self {
             Tab::Universe(panel) => format!("universe_tab_{}", panel.tab_id),
-            Tab::Terminal => "terminal_tab".to_string(),
-            Tab::Settings => "settings_tab".to_string(),
+            // Wir geben dem Terminal-Tab eine feste ID, da es normalerweise nur einen gibt.
+            // Wenn du mehrere Terminals willst, bräuchten wir hier auch eine ID.
+            Tab::Terminal(_) => "terminal_tab".to_string(),
         }
     }
 
     pub fn ui(&mut self, ui: &mut egui::Ui) {
         match self {
-            Tab::Universe(panel) => panel.ui(ui), // Ruft die ui-Methode des UniversePanel auf
-            Tab::Terminal => terminal::ui(ui),
-            Tab::Settings => settings::ui(ui),
+            Tab::Universe(panel) => panel.ui(ui),
+            Tab::Terminal(panel) => panel.ui(ui),
         }
     }
 }
