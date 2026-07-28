@@ -10,3 +10,4 @@ common = { path = "../common" }
 egui_extras = "0.28"
 
 egui = "0.28"
+bincode = "1.3.3"

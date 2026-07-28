@@ -1,12 +1,17 @@
+use common::networking::messages::TcpServerMessage;
 use eframe::egui;
 use egui_dock::{DockArea, DockState, TabViewer};
-use std::sync::mpsc;
+use std::sync::mpsc::{Receiver, Sender};
+use std::sync::{mpsc, LazyLock, RwLock};
+use std::thread;
 
+mod controller;
 mod network;
 mod panels;
 
 use crate::network::udp_client;
 use crate::network::udp_client::MAX_CHANNEL;
+use network::tcp_client::TcpClient;
 use panels::Tab;
 
 fn main() -> eframe::Result<()> {
@@ -17,10 +22,11 @@ fn main() -> eframe::Result<()> {
         ..Default::default()
     };
 
+    //let tcp_client = network::tcp_client("bla", 1234);
+
     eframe::run_native(
         "Docking App",
         options,
-        // HIER: Wir holen uns den egui::Context schon beim Start und geben ihn an MyApp weiter
         Box::new(|cc| Ok(Box::new(MyApp::new(cc.egui_ctx.clone())))),
     )
 }
@@ -31,26 +37,42 @@ enum Theme {
     Light,
 }
 
-struct MyApp {
+pub struct MyApp {
     tree: DockState<Tab>,
     show_settings_window: bool,
     username: String,
     current_theme: Theme,
     next_tab_id: u32,
-    dmx_receiver: mpsc::Receiver<(u8, [u8; MAX_CHANNEL])>,
+    dmx_receiver: Receiver<(u8, [u8; MAX_CHANNEL])>,
+    tcp_listen_receiver: Receiver<TcpServerMessage>,
+    ui_event_sender: Sender<controller::UiEvent>,
+    ui_event_receiver: Receiver<controller::UiEvent>,
+    tcp_write_sender: Sender<common::networking::messages::TcpClientMessage>,
 }
 
 impl MyApp {
     // Nimmt jetzt den Context entgegen
     fn new(ctx: egui::Context) -> Self {
         let (dmx_sender, dmx_receiver) = mpsc::channel();
+        let (tcp_write_sender, tcp_write_receiver) = mpsc::channel();
+        let (tcp_listen_sender, tcp_listen_receiver) = mpsc::channel();
+        let (ui_event_sender, ui_event_receiver) = mpsc::channel();
 
         // Übergibt den Context direkt an den Listener
         udp_client::start_udp_listener(None, dmx_sender, ctx)
             .expect("Failed to start UDP listener");
 
         // Erstelle eine neue TerminalPanel-Instanz für den initialen Tab
-        let initial_terminal_panel = panels::terminal::TerminalPanel::new(0);
+        let initial_terminal_panel = panels::terminal::TerminalPanel::new(0, ui_event_sender.clone());
+
+        let mut tcp_client = TcpClient::new(
+            "127.0.0.1:6767".parse().unwrap(),
+            tcp_write_receiver,
+            tcp_listen_sender,
+        );
+        thread::spawn(move || {
+            tcp_client.start_tcp_client();
+        });
 
         Self {
             tree: DockState::new(vec![Tab::Terminal(initial_terminal_panel)]), // Hier die Instanz verwenden
@@ -59,6 +81,10 @@ impl MyApp {
             current_theme: Theme::Dark,
             next_tab_id: 1,
             dmx_receiver,
+            tcp_listen_receiver,
+            ui_event_sender,
+            ui_event_receiver,
+            tcp_write_sender,
         }
     }
 }
@@ -77,6 +103,9 @@ impl eframe::App for MyApp {
             }
         }
 
+        controller::handle_incoming_network_data(&mut self.tcp_listen_receiver, &mut self.tree);
+        controller::handle_outgoing_events(&self.ui_event_receiver, &self.tcp_write_sender);
+
         // --- TOP BAR ---
         egui::TopBottomPanel::top("top_bar").show(ctx, |ui| {
             egui::menu::bar(ui, |ui| {
@@ -92,7 +121,7 @@ impl eframe::App for MyApp {
                         let new_tab_id = self.next_tab_id;
                         self.next_tab_id += 1;
 
-                        let new_universe_panel = panels::universe::UniversePanel::new(new_tab_id);
+                        let new_universe_panel = panels::universe::UniversePanel::new(new_tab_id, self.ui_event_sender.clone());
                         self.tree
                             .main_surface_mut()
                             .push_to_focused_leaf(Tab::Universe(new_universe_panel));

@@ -1,17 +1,21 @@
+use crate::controller::UiEvent;
 use eframe::egui;
 use eframe::egui::Color32;
 
+use std::sync::mpsc::Sender;
+
 /// A structure representing a single, colored piece of text.
-#[derive(Clone, PartialEq)]
+#[derive(Clone)]
 pub struct TextFragment {
     pub text: String,
     pub color: Color32,
 }
 
 /// The structure holding the state of the terminal panel.
-#[derive(Clone, PartialEq)]
+#[derive(Clone)]
 pub struct TerminalPanel {
-    tab_id: u32,
+    pub tab_id: u32,
+    ui_event_sender: Sender<UiEvent>,
     input_text: String,
     history: Vec<Vec<TextFragment>>,
     history_length: usize,
@@ -22,19 +26,20 @@ pub struct TerminalPanel {
 
 impl TerminalPanel {
     /// Creates a new instance of the terminal panel.
-    pub fn new(tab_id: u32) -> Self {
+    pub fn new(tab_id: u32, ui_event_sender: Sender<UiEvent>) -> Self {
         let initial_line = vec![
             TextFragment {
                 text: "> ".to_string(),
                 color: Color32::GRAY,
             },
             TextFragment {
-                text: "Konsole bereit...".to_string(),//TODO: erst printen, wenn connection established ist
+                text: "Konsole bereit...".to_string(), //TODO: erst printen, wenn connection established ist
                 color: Color32::RED,
             },
         ];
         Self {
             tab_id,
+            ui_event_sender,
             input_text: String::new(),
             history: vec![initial_line],
             history_length: 100,
@@ -88,11 +93,10 @@ impl TerminalPanel {
                             if ui.text_edit_singleline(&mut self.settings_text).changed() {
                                 // Nur positive Ganzzahlen zulassen (Ziffern)
                                 self.settings_text.retain(|c| c.is_ascii_digit());
-
                             }
                         });
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::TOP), |ui| {
-                        if ui.button("save").on_hover_text("Save").clicked(){
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::TOP), |ui| {
+                        if ui.button("save").on_hover_text("Save").clicked() {
                             if let Ok(val) = self.settings_text.parse::<usize>() {
                                 self.history_length = val;
                                 self.enforce_history_length();
@@ -146,7 +150,8 @@ impl TerminalPanel {
                     if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                         if !self.input_text.is_empty() {
                             // Füge den eingegebenen Befehl als mehrfarbige Zeile zur History hinzu
-                            self.add_fragments(vec![//TODO: command an Kernelquadrat senden
+                            self.add_fragments(vec![
+                                //TODO: command an Kernelquadrat senden
                                 TextFragment {
                                     text: "> ".to_string(),
                                     color: Color32::GRAY,
@@ -156,6 +161,12 @@ impl TerminalPanel {
                                     color: Color32::WHITE,
                                 },
                             ]);
+                            if let Err(e) = self.ui_event_sender.send(UiEvent::SendTerminalCommand {
+                                id: self.tab_id,
+                                command: self.input_text.clone(),
+                            }) {
+                                eprintln!("Failed to send UiEvent: {}", e);
+                            }
                             self.input_text.clear();
                             response.request_focus();
                         }
@@ -164,13 +175,19 @@ impl TerminalPanel {
                         if self.position_in_history < self.history.len() - 1 {
                             self.position_in_history += 1;
                         }
-                        self.input_text = self.history[self.history.len() - self.position_in_history][1].text.clone();
+                        self.input_text = self.history
+                            [self.history.len() - self.position_in_history][1]
+                            .text
+                            .clone();
                     }
 
                     if ui.input(|i| i.key_pressed(egui::Key::ArrowDown)) {
                         if self.position_in_history > 1 {
                             self.position_in_history -= 1;
-                            self.input_text = self.history[self.history.len() - self.position_in_history][1].text.clone();
+                            self.input_text = self.history
+                                [self.history.len() - self.position_in_history][1]
+                                .text
+                                .clone();
                         } else if self.position_in_history > 0 {
                             self.position_in_history -= 1;
                             self.input_text = "".to_string();

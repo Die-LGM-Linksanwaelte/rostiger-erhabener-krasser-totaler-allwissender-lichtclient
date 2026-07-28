@@ -5,7 +5,7 @@ pub mod universe;
 use terminal::TerminalPanel;
 use universe::UniversePanel; // Importiere TerminalPanel
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone)]
 pub enum Tab {
     Universe(UniversePanel),
     Terminal(TerminalPanel),

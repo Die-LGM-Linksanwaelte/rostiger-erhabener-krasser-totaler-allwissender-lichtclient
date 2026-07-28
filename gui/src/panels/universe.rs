@@ -1,9 +1,12 @@
 use crate::network::udp_client::MAX_CHANNEL;
+use crate::controller::UiEvent;
 use eframe::egui;
+use std::sync::mpsc::Sender;
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone)]
 pub struct UniversePanel {
     pub tab_id: u32,
+    ui_event_sender: Sender<UiEvent>,
     pub selected_universe: u8,
     pub dmx_data: [u8; MAX_CHANNEL],
     pub settings_open: bool,
@@ -12,9 +15,14 @@ pub struct UniversePanel {
 
 impl UniversePanel {
     //TODO: refractoring, einzelne methoden usw.
-    pub fn new(tab_id: u32) -> Self {
+    pub fn new(tab_id: u32, ui_event_sender: Sender<UiEvent>) -> Self {
+        if let Err(e) = ui_event_sender.send(UiEvent::LoginRequest) {
+            eprintln!("Failed to send UiEvent: {}", e);
+        }
+        
         Self {
             tab_id,
+            ui_event_sender,
             selected_universe: 1,
             dmx_data: [0; MAX_CHANNEL],
             settings_open: false,
