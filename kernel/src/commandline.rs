@@ -9,30 +9,30 @@ use std::collections::HashMap;
 use std::str::SplitAsciiWhitespace;
 use common::logging::LogLevel::*;
 
-pub(crate) fn parse_cli_string(command_string: String) -> Result<CliAction,String> {
-    let mut line_iter = command_string.split_ascii_whitespace();
-    let arg_count = line_iter.clone().count().saturating_sub(1);
-
-    match line_iter.next() {
-        Some("help") => Ok(CliAction::Help),
-
-        Some("new") if arg_count % 2 == 1 && arg_count > 1 => {
-            parse_new_fixture_type(line_iter)
-        }
-
-        Some("new") => {
-            Err("Error: \"new\"-Command needs a name for the new Fixture-Type, and then a list of properties with \
-            their channels.".to_string())
-        }
-
-        Some("add") if arg_count == 4 => {
-            Err("Something".into())
-        }
-
-
-        _ => Err("Keine Ahnung".into())
-    }
-}
+//pub(crate) fn parse_cli_string(command_string: String) -> Result<CliAction,String> {
+//    let mut line_iter = command_string.split_ascii_whitespace();
+//    let arg_count = line_iter.clone().count().saturating_sub(1);
+//
+//    match line_iter.next() {
+//        Some("help") => Ok(CliAction::Help),
+//
+//        Some("new") if arg_count % 2 == 1 && arg_count > 1 => {
+//            parse_new_fixture_type(line_iter)
+//        }
+//
+//        Some("new") => {
+//            Err("Error: \"new\"-Command needs a name for the new Fixture-Type, and then a list of properties with \
+//            their channels.".to_string())
+//        }
+//
+//        Some("add") if arg_count == 4 => {
+//            Err("Something".into())
+//        }
+//
+//
+//        _ => Err("Keine Ahnung".into())
+//    }
+//}
 
 /// Checks if the given string is a valid command and executes it.
 /// See '../help.txt' for a list of available commands.
