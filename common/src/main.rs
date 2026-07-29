@@ -1,15 +1,9 @@
 mod fixture;
-mod networking;
-
-use crate::networking::messages::{HandshakeRequest, HandshakeResponse};
-use networking::messages::{
-    SubscribeTopic, TcpClientMessage, TcpServerMessage, UpdateMode, UserRole,
-};
-use std::env;
 use std::io::{self, Read, Write};
 use std::net::TcpStream;
 use std::thread;
-
+use std::env;
+use common::networking::messages::{TcpClientMessage, TcpServerMessage, UpdateMode, SubscribeTopic, UserRole, HandshakeRequest, HandshakeResponse};
 ///startPoint - This is the main entry point of the common application.
 fn main() {
     println!("EDER stinkt!");
@@ -23,11 +17,12 @@ fn main() {
 
     println!("[System] Versuche Verbindung zu {} aufzubauen...", target);
 
-    let mut write_stream = TcpStream::connect(target).expect("Verbindung fehlgeschlagen");
+    let mut write_stream = TcpStream::connect(target)
+        .expect("Verbindung fehlgeschlagen");
 
     // ...
     let client_version = env!("CARGO_PKG_VERSION");
-    let protocol_hash = networking::messages::get_protocol_version();
+    let protocol_hash = common::networking::messages::get_protocol_version();
 
     let req = HandshakeRequest {
         magic_string: "REKTAL".into(),
@@ -35,9 +30,7 @@ fn main() {
         client_version: client_version.into(),
     };
 
-    write_stream
-        .write_all(&bincode::serialize(&req).unwrap())
-        .unwrap();
+    write_stream.write_all(&bincode::serialize(&req).unwrap()).unwrap();
 
     let mut buffer = [0; 1024];
 
@@ -56,32 +49,21 @@ fn main() {
     let res = match bincode::deserialize::<HandshakeResponse>(&buffer[..bytes]) {
         Ok(res) => res,
         Err(e) => {
-            println!(
-                "\n[System] Fehler beim Deserialisieren des Handshakes: {}",
-                e
-            );
+            println!("\n[System] Fehler beim Deserialisieren des Handshakes: {}", e);
             return;
         }
     };
 
     match res {
         HandshakeResponse::Ok => {
-            println!(
-                "\x1b[32m[System] Version {} verifiziert!\x1b[0m",
-                client_version
-            );
+            println!("\x1b[32m[System] Version {} verifiziert!\x1b[0m", client_version);
         }
         HandshakeResponse::Mismatch { server_version } => {
+
             // HIER IST DEINE ABSOLUT PERFEKTE FEHLERMELDUNG:
             println!("\n\x1b[91m[CRITICAL ERROR] Protokoll-Abweichung erkannt!\x1b[0m");
-            println!(
-                "\x1b[93mDer Kernel läuft auf Version: {}\x1b[0m",
-                server_version
-            );
-            println!(
-                "\x1b[93mDieser Client ist auf Version: {}\x1b[0m",
-                client_version
-            );
+            println!("\x1b[93mDer Kernel läuft auf Version: {}\x1b[0m", server_version);
+            println!("\x1b[93mDieser Client ist auf Version: {}\x1b[0m", client_version);
 
             // Die smarte Entscheidungshilfe für den User:
             println!("GPlus bist du dumm, man kann Strings nicht mit < oder > vergleichen!");
@@ -96,9 +78,7 @@ fn main() {
     }
 
     // DER KLON-TRICK FÜR DEN CLIENT
-    let mut read_stream = write_stream
-        .try_clone()
-        .expect("Konnte Stream nicht klonen");
+    let mut read_stream = write_stream.try_clone().expect("Konnte Stream nicht klonen");
 
     // ---------------------------------------------------------
     // LESE-THREAD (Hintergrund)
@@ -121,45 +101,28 @@ fn main() {
 
                             match kernel_msg {
                                 TcpServerMessage::Unauthenticated => {
-                                    println!(
-                                        "\n\x1b[31m[Server] Client ist nicht angemeldet. Nachricht verworfen\x1b[0m"
-                                    );
+                                    println!("\n\x1b[31m[Server] Client ist nicht angemeldet. Nachricht verworfen\x1b[0m");
                                 }
                                 TcpServerMessage::LoginOk { token } => {
-                                    println!(
-                                        "\n\x1b[32m[System] Login erfolgreich! Euer Session-Token: {}\x1b[0m",
-                                        token
-                                    );
+                                    println!("\n\x1b[32m[System] Login erfolgreich! Euer Session-Token: {}\x1b[0m", token);
                                 }
                                 TcpServerMessage::LoginFailed { reason } => {
-                                    println!(
-                                        "\n\x1b[31m[System] Login fehlgeschlagen: {}\x1b[0m",
-                                        reason
-                                    );
+                                    println!("\n\x1b[31m[System] Login fehlgeschlagen: {}\x1b[0m", reason);
                                 }
                                 TcpServerMessage::ReloginOk { token } => {
-                                    println!(
-                                        "\n\x1b[32m[System] Relogin erfolgreich! Session {} aktiv.\x1b[0m",
-                                        token
-                                    );
+                                    println!("\n\x1b[32m[System] Relogin erfolgreich! Session {} aktiv.\x1b[0m", token);
                                 }
                                 TcpServerMessage::ReloginFailed { reason } => {
-                                    println!(
-                                        "\n\x1b[31m[System] Relogin fehlgeschlagen: {}\x1b[0m",
-                                        reason
-                                    );
+                                    println!("\n\x1b[31m[System] Relogin fehlgeschlagen: {}\x1b[0m", reason);
                                 }
                                 TcpServerMessage::LogoutOk => {
                                     println!("\n\x1b[34m[System] Erfolgreich abgemeldet.\x1b[0m");
                                 }
                                 TcpServerMessage::Kicked { reason } => {
-                                    println!(
-                                        "\n\x1b[31m[System] Du wurdest gekickt: {}\x1b[0m",
-                                        reason
-                                    );
+                                    println!("\n\x1b[31m[System] Du wurdest gekickt: {}\x1b[0m", reason);
                                     std::process::exit(0); // Client beenden
                                 }
-                                TcpServerMessage::CommandOutput { answer: result, .. } => {
+                                TcpServerMessage::CommandOutput{answer: result, ..} => {
                                     match result {
                                         Ok(response) => println!("[Server]: {}", response),
                                         Err(e) => println!("[Server Error]: \x1b[31m{}\x1b[0m", e),
@@ -173,10 +136,7 @@ fn main() {
                             io::stdout().flush().unwrap();
                         }
                         Err(e) => {
-                            println!(
-                                "\n[System] Fehler beim Deserialisieren der Serverantwort: {}",
-                                e
-                            );
+                            println!("\n[System] Fehler beim Deserialisieren der Serverantwort: {}", e);
                         }
                     }
                 }
@@ -187,6 +147,7 @@ fn main() {
             }
         }
     });
+
 
     // ---------------------------------------------------------
     // EINGABE-SCHLEIFE (Haupt-Thread)
@@ -260,9 +221,7 @@ fn main() {
                         }
                     }
                     Err(_) => {
-                        println!(
-                            "\x1b[31m[System] Ungültiges Token. Bitte eine Zahl eingeben.\x1b[0m"
-                        );
+                        println!("\x1b[31m[System] Ungültiges Token. Bitte eine Zahl eingeben.\x1b[0m");
                         continue; // Bricht diesen Durchlauf ab und zeigt wieder den "> " Prompt
                     }
                 }
@@ -270,10 +229,7 @@ fn main() {
 
             "0" => break, // Beendet die Schleife und damit das Programm
 
-            command => TcpClientMessage::ExecuteCommand {
-                command: command.into(),
-                terminal_id: 0,
-            },
+            command => TcpClientMessage::ExecuteCommand {command: command.into(), terminal_id: 0},
         };
 
         // Nachricht senden, Thread blockiert hier NICHT mehr auf eine Antwort!

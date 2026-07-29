@@ -1,24 +1,35 @@
-use crate::commandline::parse_command;
 use interface::interfaces::dmx_output_loop;
 use std::io::{self, Write};
 use std::thread;
 use std::time::Duration;
+use common::logging::{Logger, TerminalSink, FileSink};
+use common::logging::LogLevel::*;
+use common::r_log;
+use crate::commandline::parse_command;
 
 mod commandline;
 
-/// Spawns the ['dmx_output_loop']-thread an than starts the main REPL.
+/// Spawns the ['dmx_output_loop']-thread and than starts the main REPL.
 fn main() -> io::Result<()> {
-    let artnet_handle = std::thread::spawn(|| {
+
+    if cfg!(all(debug_assertions, not(test))) {
+        thread::sleep(Duration::from_millis(1000));
+    }
+
+    Logger::global().add_sink(Box::new(TerminalSink {cli_prompt: Some("> ".into())}));
+    Logger::global().add_sink(Box::new(FileSink::new("kernel.log")));
+
+    let _artnet_handle = std::thread::spawn(|| {
         dmx_output_loop().expect("\x1b[31martnet loop failed\x1b[0m");
     });
 
-    let network_handle = std::thread::spawn(|| {
-        common::networking::server_sockets::activate_socket(6767, |cmd| parse_command(cmd));
+
+    common::networking::server_sockets::activate_socket(6767, |cmd| {
+        parse_command(cmd)
     });
 
-    thread::sleep(Duration::new(0, 1_000_000));
+
     loop {
-        print!("> ");
         io::stdout().flush()?;
 
         let mut input = String::new();
@@ -30,15 +41,14 @@ fn main() -> io::Result<()> {
 
         match parse_command(input) {
             Ok(output) => {
-                println!("\x1b[32m{}\x1b[0m", output);
-            }
+                r_log!(UserSuccess, "{}", output);
+            },
 
             Err(output) => {
-                eprintln!("\x1b[33m{}\x1b[0m", output);
+                r_log!(UserError,"{}", output);
             }
         }
     }
 
-    artnet_handle.join().unwrap();
-    println!("Hello, world!");
+    _artnet_handle.join().unwrap();
 }

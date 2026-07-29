@@ -1,8 +1,8 @@
-use crate::networking::messages::{TcpServerMessage, UserRole};
 use std::collections::HashMap;
-use std::sync::atomic::AtomicU64;
-use std::sync::mpsc::Sender;
 use std::sync::{LazyLock, RwLock};
+use std::sync::atomic::AtomicU64;
+use crate::networking::messages::{TcpServerMessage, UserRole};
+use std::sync::mpsc::Sender;
 
 pub type SessionID = u64;
 
@@ -18,5 +18,5 @@ pub struct ClientSession {
     pub user_name: String,
     pub user_role: UserRole,
 
-    pub active_connection: Option<(Sender<TcpServerMessage>, u64)>,
+    pub active_connection: Option<(Sender<TcpServerMessage>, u64)>
 }
