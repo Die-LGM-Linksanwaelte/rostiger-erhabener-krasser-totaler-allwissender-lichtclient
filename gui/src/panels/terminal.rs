@@ -2,7 +2,7 @@ use crate::controller::UiEvent;
 use eframe::egui;
 use eframe::egui::Color32;
 
-use std::sync::mpsc::Sender;
+use crate::UI_EVENT_SENDER;
 
 /// A structure representing a single, colored piece of text.
 #[derive(Clone)]
@@ -15,7 +15,6 @@ pub struct TextFragment {
 #[derive(Clone)]
 pub struct TerminalPanel {
     pub tab_id: u32,
-    ui_event_sender: Sender<UiEvent>,
     input_text: String,
     history: Vec<Vec<TextFragment>>,
     history_length: usize,
@@ -26,7 +25,7 @@ pub struct TerminalPanel {
 
 impl TerminalPanel {
     /// Creates a new instance of the terminal panel.
-    pub fn new(tab_id: u32, ui_event_sender: Sender<UiEvent>) -> Self {
+    pub fn new(tab_id: u32, ) -> Self {
         let initial_line = vec![
             TextFragment {
                 text: "> ".to_string(),
@@ -39,7 +38,6 @@ impl TerminalPanel {
         ];
         Self {
             tab_id,
-            ui_event_sender,
             input_text: String::new(),
             history: vec![initial_line],
             history_length: 100,
@@ -76,7 +74,7 @@ impl TerminalPanel {
         });
     }
 
-    /// Draws the settings window if it is currently open.
+    /// Draws the settiui_event_senderngs window if it is currently open.
     fn draw_settings_window(&mut self, ui: &mut egui::Ui) {
         if self.settings_open {
             let mut is_open = self.settings_open;
@@ -151,7 +149,6 @@ impl TerminalPanel {
                         if !self.input_text.is_empty() {
                             // Füge den eingegebenen Befehl als mehrfarbige Zeile zur History hinzu
                             self.add_fragments(vec![
-                                //TODO: command an Kernelquadrat senden
                                 TextFragment {
                                     text: "> ".to_string(),
                                     color: Color32::GRAY,
@@ -161,11 +158,13 @@ impl TerminalPanel {
                                     color: Color32::WHITE,
                                 },
                             ]);
-                            if let Err(e) = self.ui_event_sender.send(UiEvent::SendTerminalCommand {
-                                id: self.tab_id,
-                                command: self.input_text.clone(),
-                            }) {
-                                eprintln!("Failed to send UiEvent: {}", e);
+                            if let Some(sender) = UI_EVENT_SENDER.read().unwrap().as_ref() {
+                                if let Err(e) = sender.send(UiEvent::SendTerminalCommand {
+                                    id: self.tab_id,
+                                    command: self.input_text.clone(),
+                                }) {
+                                    eprintln!("Failed to send UiEvent: {}", e);
+                                }
                             }
                             self.input_text.clear();
                             response.request_focus();

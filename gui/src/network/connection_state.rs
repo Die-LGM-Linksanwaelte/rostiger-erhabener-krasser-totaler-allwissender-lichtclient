@@ -1,3 +1,4 @@
+#[derive(PartialEq, Debug, Clone)]
 pub enum ConnectionState {
     Connected,
     Disconnected,
@@ -5,4 +6,6 @@ pub enum ConnectionState {
     ConnectionPending,
     LoginPending,
     LoggedOut,
+    LoggedIn,
+    LoginFailed(String),
 }

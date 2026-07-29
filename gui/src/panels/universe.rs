@@ -1,12 +1,9 @@
 use crate::network::udp_client::MAX_CHANNEL;
-use crate::controller::UiEvent;
 use eframe::egui;
-use std::sync::mpsc::Sender;
 
 #[derive(Clone)]
 pub struct UniversePanel {
     pub tab_id: u32,
-    ui_event_sender: Sender<UiEvent>,
     pub selected_universe: u8,
     pub dmx_data: [u8; MAX_CHANNEL],
     pub settings_open: bool,
@@ -15,14 +12,10 @@ pub struct UniversePanel {
 
 impl UniversePanel {
     //TODO: refractoring, einzelne methoden usw.
-    pub fn new(tab_id: u32, ui_event_sender: Sender<UiEvent>) -> Self {
-        if let Err(e) = ui_event_sender.send(UiEvent::LoginRequest) {
-            eprintln!("Failed to send UiEvent: {}", e);
-        }
+    pub fn new(tab_id: u32) -> Self {
         
         Self {
             tab_id,
-            ui_event_sender,
             selected_universe: 1,
             dmx_data: [0; MAX_CHANNEL],
             settings_open: false,
@@ -92,7 +85,7 @@ impl UniversePanel {
 
             // 2. STRETCH-MATHEMATIK: Berechne die exakte Breite, um den Platz 100% auszufüllen
             // Der gesamte Platz für Abstände zwischen den Spalten:
-            let total_spacing = (num_columns.saturating_sub(1)) as f32 * spacing;
+            let total_spacing = num_columns.saturating_sub(1) as f32 * spacing;
             // Der Platz, der jetzt noch für die Zellen selbst übrig ist, geteilt durch die Anzahl der Zellen:
             let stretched_full_cell_width =
                 (available_width - total_spacing) / (num_columns as f32);
