@@ -1,13 +1,9 @@
 mod fixture;
-mod networking;
-
 use std::io::{self, Read, Write};
 use std::net::TcpStream;
 use std::thread;
 use std::env;
-use networking::messages::{TcpClientMessage, TcpServerMessage, UpdateMode, SubscribeTopic, UserRole};
-use crate::networking::messages::{HandshakeRequest, HandshakeResponse};
-
+use common::networking::messages::{TcpClientMessage, TcpServerMessage, UpdateMode, SubscribeTopic, UserRole, HandshakeRequest, HandshakeResponse};
 ///startPoint - This is the main entry point of the common application.
 fn main() {
     println!("EDER stinkt!");
@@ -26,7 +22,7 @@ fn main() {
 
     // ...
     let client_version = env!("CARGO_PKG_VERSION");
-    let protocol_hash = networking::messages::get_protocol_version();
+    let protocol_hash = common::networking::messages::get_protocol_version();
 
     let req = HandshakeRequest {
         magic_string: "REKTAL".into(),

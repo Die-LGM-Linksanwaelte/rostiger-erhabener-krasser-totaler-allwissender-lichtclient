@@ -1,4 +1,4 @@
-use common::fixture;
+use common::{fixture, r_log};
 use common::fixture::ChannelError::{ChannelAlreadyInUse, ChannelOutOfRange, UniverseOutOfRange};
 use common::fixture::FixtureError::{
     ChannelError, FixtureNameAlreadyInUse, FixtureTypeNameAlreadyInUse, InvalidFixture,
@@ -7,6 +7,32 @@ use common::fixture::FixtureError::{
 use common::fixture::{Fixture, FixtureType};
 use std::collections::HashMap;
 use std::str::SplitAsciiWhitespace;
+use common::logging::LogLevel::*;
+
+pub(crate) fn parse_cli_string(command_string: String) -> Result<CliAction,String> {
+    let mut line_iter = command_string.split_ascii_whitespace();
+    let arg_count = line_iter.clone().count().saturating_sub(1);
+
+    match line_iter.next() {
+        Some("help") => Ok(CliAction::Help),
+
+        Some("new") if arg_count % 2 == 1 && arg_count > 1 => {
+            parse_new_fixture_type(line_iter)
+        }
+
+        Some("new") => {
+            Err("Error: \"new\"-Command needs a name for the new Fixture-Type, and then a list of properties with \
+            their channels.".to_string())
+        }
+
+        Some("add") if arg_count == 4 => {
+            Err("Something".into())
+        }
+
+
+        _ => Err("Keine Ahnung".into())
+    }
+}
 
 /// Checks if the given string is a valid command and executes it.
 /// See '../help.txt' for a list of available commands.
@@ -53,7 +79,7 @@ pub(crate) fn parse_command(line: String) -> Result<String,String> {
             Err("Error: \"type\" needs a fixture as argument".to_string())
         }
 
-        Some("create_debug") => {
+        Some("create_debug") if cfg!(all(debug_assertions, not(test))) => {
             let args = "rgb red 0 green 1 blue 2".split_ascii_whitespace();
             if let Err(error) = new_fixture_type(args) {
                 return Err(error.to_string());
@@ -70,7 +96,7 @@ pub(crate) fn parse_command(line: String) -> Result<String,String> {
             Ok("Created the debug-fixtures".to_string())
         }
 
-        Some("set_all") if arg_count == 2 => {
+        Some("set_all") if arg_count == 2 && cfg!(all(debug_assertions, not(test))) => {
             let property_type = line_iter.next().unwrap().to_string();
             let value = line_iter.next().unwrap().to_string();
 
@@ -86,7 +112,7 @@ pub(crate) fn parse_command(line: String) -> Result<String,String> {
             Ok(format!("Set {property_type} to {value} in all debug-fixtures"))
         }
 
-        Some("break") => {
+        Some("break") if cfg!(all(debug_assertions, not(test))) => {
             let _dmx_config = fixture::DMX_CONFIGURATION.read().unwrap();
             let _universes = fixture::calculate_dmx_values();
             Ok("Add a breakpoint at this point in the code to check the datastructures".to_string())
@@ -165,7 +191,7 @@ fn new_fixture_type(mut args: SplitAsciiWhitespace) -> Result<String,String> {
         }
 
         Err(_) => {
-            eprintln!("Error: new_fixture_type() threw an Error it shouldn't");
+            r_log!(Error,"new_fixture_type() threw an Error it shouldn't");
             None::<Fixture>.unwrap();
             unreachable!();
             // Mir ist langweilig, deswegen crashe ich hier, auf die lustigste und verwirrendste Art. Hier muss auch
@@ -229,7 +255,7 @@ fn new_fixture(mut args: SplitAsciiWhitespace) -> Result<String,String> {
         }
 
         Err(_) => {
-            eprintln!("Error: new_fixture_type() threw an Error it shouldn't");
+            r_log!(Error, "new_fixture_type() threw an Error it shouldn't");
             None::<Fixture>.unwrap();
             unreachable!()
             // Mir ist langweilig, deswegen crashe ich hier, auf die lustigste und verwirrendste Art. Hier muss auch
@@ -273,7 +299,7 @@ fn set_value(mut args: SplitAsciiWhitespace) -> Result<String,String> {
         }
 
         Err(_) => {
-            eprintln!("Error: new_fixture_type() threw an Error it shouldn't");
+            r_log!(Error, "new_fixture_type() threw an Error it shouldn't");
             None::<Fixture>.unwrap();
             unreachable!()
             // Mir ist langweilig, deswegen crashe ich hier, auf die lustigste und verwirrendste Art. Hier muss auch
