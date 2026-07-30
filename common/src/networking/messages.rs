@@ -2,6 +2,8 @@ use std::fmt;
 use std::fmt::Formatter;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use serde::{Deserialize, Serialize};
+use crate::logging::LogLevel;
+use crate::cli::CliAction;
 use crate::networking::connection_engine::SessionID;
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -56,7 +58,12 @@ pub enum TcpClientMessage {
 
     ExecuteCommand {
         command: String,
-        terminal_id: u32
+        response_id: u32
+    },
+
+    ExecuteImplicitCommand {
+        command: CliAction,
+        response_id: u32
     },
 
     RequestEdit(EditableResource),
@@ -86,8 +93,8 @@ pub enum TcpServerMessage {
     Kicked {reason: String},
 
     CommandOutput {
-        answer: Result<String, String>,
-        terminal_id: u32
+        answer: (LogLevel, String),
+        response_id: u32
     },
 
     TopicUpdate {

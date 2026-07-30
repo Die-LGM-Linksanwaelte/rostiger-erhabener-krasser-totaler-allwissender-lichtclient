@@ -1,7 +1,12 @@
 use std::cmp::{max, min, PartialEq};
+use std::fmt::{Display, Formatter};
 use serde::{Deserialize, Serialize};
 use OutputType::{CMY, HSV, RGB};
-use crate::fixture::{Channel, ChannelError, FixtureError, PropertyType};
+use crate::fixture::{Channel, ChannelError, ChannelIndex, ChannelParameter, ChannelValue, FixtureError, PropertyType};
+
+
+type SignedChannelValue = i64;
+type FloatChannelValue = f64;
 
 /// Represents a color with its channel values for all supported color models
 /// (RGB, CMY, and HSV).
@@ -10,15 +15,15 @@ pub struct Color {
     color1: Option<Channel>,
     color2: Option<Channel>,
     color3: Option<Channel>,
-    red: u16,
-    green: u16,
-    blue: u16,
-    cyan: u16,
-    magenta: u16,
-    yellow: u16,
-    hue: u16,
-    saturation: u16,
-    value: u16,
+    red: ChannelValue,
+    green: ChannelValue,
+    blue: ChannelValue,
+    cyan: ChannelValue,
+    magenta: ChannelValue,
+    yellow: ChannelValue,
+    hue: ChannelValue,
+    saturation: ChannelValue,
+    value: ChannelValue,
 }
 
 /// A color template used by [`FixtureType`] to define how colors are
@@ -29,9 +34,9 @@ pub struct Color {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ColorType {
     output_type: Option<OutputType>,
-    color1: Option<(u16, Option<u16>)>,
-    color2: Option<(u16, Option<u16>)>,
-    color3: Option<(u16, Option<u16>)>,
+    color1: Option<ChannelParameter>,
+    color2: Option<ChannelParameter>,
+    color3: Option<ChannelParameter>,
 }
 #[derive(Debug, PartialEq, Copy, Clone, Serialize, Deserialize)]
 enum OutputType {
@@ -41,7 +46,7 @@ enum OutputType {
 }
 
 /// Identifies a specific channel or property of a [`Color`].
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub enum ColorPropertyType {
     Red,
     Green,
@@ -55,7 +60,7 @@ pub enum ColorPropertyType {
 }
 
 impl ColorPropertyType {
-    fn new(color_number: u16, output_type: OutputType) -> Option<ColorPropertyType> {
+    fn new(color_number: u8, output_type: OutputType) -> Option<ColorPropertyType> {
         match (color_number, output_type) {
             (1, RGB) => Some(ColorPropertyType::Red),
             (2, RGB) => Some(ColorPropertyType::Green),
@@ -73,7 +78,7 @@ impl ColorPropertyType {
         }
     }
 
-    fn to_output_type(&self) -> (u16, OutputType) {
+    fn to_output_type(&self) -> (u8, OutputType) {
         match self {
             ColorPropertyType::Red => (1, RGB),
             ColorPropertyType::Green => (2, RGB),
@@ -115,6 +120,22 @@ impl ColorPropertyType {
     }
 }
 
+impl Display for ColorPropertyType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ColorPropertyType::Red => write!(f, "red"),
+            ColorPropertyType::Green => write!(f, "green"),
+            ColorPropertyType::Blue => write!(f, "blue"),
+            ColorPropertyType::Cyan => write!(f, "cyan"),
+            ColorPropertyType::Magenta => write!(f, "magenta"),
+            ColorPropertyType::Yellow => write!(f, "yellow"),
+            ColorPropertyType::Hue => write!(f, "hue"),
+            ColorPropertyType::Saturation => write!(f, "saturation"),
+            ColorPropertyType::Value => write!(f, "value"),
+        }
+    }
+}
+
 impl ColorType {
 
     /// Creates an empty [`ColorType`] with no output type or channels set.
@@ -139,21 +160,19 @@ impl ColorType {
     ///
     /// Returns [`FixtureError::MultipleColorOutputTypes`] if the channel belongs to a
     /// different color model than one already assigned (e.g. mixing RGB and HSV).
-    pub fn parse(&mut self, s: String, value: (u16, Option<u16>)) -> Result<bool, FixtureError> {
-        let (new_type, slot) = match s.as_str() {
-            "red"        => (RGB, 1),
-            "green"      => (RGB, 2),
-            "blue"       => (RGB, 3),
+    pub fn checked_add_channel(&mut self, s: ColorPropertyType, value: ChannelParameter) -> Result<(), FixtureError> {
+        let (new_type, slot) = match s {
+            ColorPropertyType::Red          => (RGB, 1),
+            ColorPropertyType::Green        => (RGB, 2),
+            ColorPropertyType::Blue         => (RGB, 3),
 
-            "cyan"       => (CMY, 1),
-            "magenta"    => (CMY, 2),
-            "yellow"     => (CMY, 3),
+            ColorPropertyType::Cyan         => (CMY, 1),
+            ColorPropertyType::Magenta      => (CMY, 2),
+            ColorPropertyType::Yellow       => (CMY, 3),
 
-            "hue"        => (HSV, 1),
-            "saturation" => (HSV, 2),
-            "value"      => (HSV, 3),
-
-            _ => return Ok(false),
+            ColorPropertyType::Hue          => (HSV, 1),
+            ColorPropertyType::Saturation   => (HSV, 2),
+            ColorPropertyType::Value        => (HSV, 3),
         };
 
         if let Some(old_type) = self.output_type {
@@ -175,7 +194,7 @@ impl ColorType {
 
         *target = Some(value);
 
-        Ok(true)
+        Ok(())
     }
 
     /// Returns `true` if at least one color channel has been set.
@@ -207,21 +226,21 @@ impl Color {
         color_type: &ColorType, device_channel: u16, universe: usize, fixture_name: &str
     ) -> Result<Self, ChannelError> {
         let default_value = if color_type.output_type == Some(CMY) {
-            u16::MAX
+            ChannelValue::MAX
         } else if let Some(_) = color_type.output_type {
-            0
+            0 as ChannelValue
         } else {
             // ColorType::new() must only be called when ColorType::exists() returns true
             unreachable!();
         };
 
-        let color1 = color_type.color1
+        let color1 = color_type.color1.clone()
             .map(|c| Channel::new(c, default_value, device_channel))
             .transpose()?;
-        let color2 = color_type.color2
+        let color2 = color_type.color2.clone()
             .map(|c| Channel::new(c, default_value, device_channel))
             .transpose()?;
-        let color3 = color_type.color3
+        let color3 = color_type.color3.clone()
             .map(|c| Channel::new(c,default_value, device_channel))
             .transpose()?;
 
@@ -260,15 +279,15 @@ impl Color {
             color1,
             color2,
             color3,
-            red: 0,
-            green: 0,
-            blue: 0,
-            cyan: u16::MAX,
-            magenta: u16::MAX,
-            yellow: u16::MAX,
-            hue: 0,
-            saturation: 0,
-            value: 0,
+            red: 0 as ChannelValue,
+            green: 0 as ChannelValue,
+            blue: 0 as ChannelValue,
+            cyan: ChannelValue::MAX,
+            magenta: ChannelValue::MAX,
+            yellow: ChannelValue::MAX,
+            hue: 0 as ChannelValue,
+            saturation: 0 as ChannelValue,
+            value: 0 as ChannelValue,
 
         })
     }
@@ -290,14 +309,14 @@ impl Color {
         }
     }
 
-    fn set_rgb(&mut self, red: u16, green: u16, blue: u16) {
+    fn set_rgb(&mut self, red: ChannelValue, green: ChannelValue, blue: ChannelValue) {
         self.red = red;
         self.green = green;
         self.blue = blue;
 
-        self.cyan = u16::MAX - red;
-        self.magenta = u16::MAX - green;
-        self.yellow = u16::MAX - blue;
+        self.cyan = ChannelValue::MAX - red;
+        self.magenta = ChannelValue::MAX - green;
+        self.yellow = ChannelValue::MAX - blue;
 
         let max = max(red, max(green, blue));
         let min = min(red, min(green, blue));
@@ -306,37 +325,39 @@ impl Color {
         self.saturation = if max == 0 {
             0
         } else {
-            ( (delta as f32 * u16::MAX as f32) / max as f32 ).round() as u16
+            ((delta as FloatChannelValue * ChannelValue::MAX as FloatChannelValue) / max as FloatChannelValue ).round()
+                as ChannelValue
         };
-        let mut hue: i32 = (u16::MAX as f32 / 6.0_f32
+        let mut hue: SignedChannelValue = (ChannelValue::MAX as FloatChannelValue / 6.0 as FloatChannelValue
             * (if delta == 0 {
                 0.0
             } else if max == red {
-                ((green as f32 - blue as f32) / delta as f32) % 6.0
+                ((green as FloatChannelValue - blue as FloatChannelValue) / delta as FloatChannelValue) % 6.0
             } else if max == green {
-                ((blue as f32 - red as f32) / delta as f32) + 2.0
+                ((blue as FloatChannelValue - red as FloatChannelValue) / delta as FloatChannelValue) + 2.0
             } else {
-                ((red as f32 - green as f32) / delta as f32) + 4.0
-            })) as i32;
+                ((red as FloatChannelValue - green as FloatChannelValue) / delta as FloatChannelValue) + 4.0
+            })) as SignedChannelValue;
 
         if hue < 0 {
-            hue = hue + u16::MAX as i32;
+            hue = hue + ChannelValue::MAX as SignedChannelValue;
         }
 
-        self.hue = hue as u16;
+        self.hue = hue as ChannelValue;
         
         self.set_color()
     }
 
-    fn set_hsv(&mut self, hue: u16, saturation: u16, value: u16) {
+    fn set_hsv(&mut self, hue: ChannelValue, saturation: ChannelValue, value: ChannelValue) {
         self.hue = hue;
         self.saturation = saturation;
         self.value = value;
         //Achtung: es folgt eine unstetige Kackfunktion
-        let c = (value as f32 * (saturation as f32 / u16::MAX as f32)).round() as u16;
+        let c = (value as FloatChannelValue * 
+            (saturation as FloatChannelValue / ChannelValue::MAX as FloatChannelValue)).round() as ChannelValue;
         let m = value.saturating_sub(c);
-        let h = hue as f32 / (u16::MAX as f32 / 6f32);
-        let x = ( c as f32 * (1.0 - ((h % 2.0) - 1.0).abs()) ).round() as u16;
+        let h = hue as FloatChannelValue / (ChannelValue::MAX as FloatChannelValue / 6 as FloatChannelValue);
+        let x = ( c as FloatChannelValue * (1.0 - ((h % 2.0) - 1.0).abs()) ).round() as ChannelValue;
 
         let (r, g, b) = match h {
             n if n < 1.0 => (c, x, 0),
@@ -352,9 +373,9 @@ impl Color {
         self.green = g.saturating_add(m);
         self.blue = b.saturating_add(m);
 
-        self.cyan = u16::MAX - self.red;
-        self.magenta = u16::MAX - self.green;
-        self.yellow= u16::MAX - self.blue;
+        self.cyan = ChannelValue::MAX - self.red;
+        self.magenta = ChannelValue::MAX - self.green;
+        self.yellow= ChannelValue::MAX - self.blue;
         
         self.set_color()
     }
@@ -364,7 +385,7 @@ impl Color {
     /// CMY values are converted to RGB internally (`u16::MAX - value`),
     /// HSV values are converted to RGB via [`Color::set_hsv`].
     /// RGB values are converted to HSV via ['Color::set_rgb']
-    pub fn set(&mut self, property: ColorPropertyType, value: u16) {
+    pub fn set(&mut self, property: ColorPropertyType, value: ChannelValue) {
         let (color_number, output_type) = property.to_output_type();
 
         let (mut value1, mut value2, mut value3) = match output_type {
@@ -384,9 +405,9 @@ impl Color {
             RGB => self.set_rgb(value1, value2, value3),
             HSV => self.set_hsv(value1, value2, value3),
             CMY => self.set_rgb(
-                u16::MAX - value1,
-                u16::MAX - value2,
-                u16::MAX - value3
+                ChannelValue::MAX - value1,
+                ChannelValue::MAX - value2,
+                ChannelValue::MAX - value3
             ),
         }
 
@@ -398,32 +419,21 @@ impl Color {
     ///
     /// Each entry is a `(value, channel_index)` pair. For channels with 16-bit
     /// fine control, two entries are returned — coarse first, then fine.
-    pub fn get_values(&self) -> Vec<(u16, u8)> {
+    pub fn get_values(&self) -> Vec<(ChannelIndex, u8)> {
         let mut output = Vec::new();
 
         if let Some(c) = self.color1.as_ref() {
-            output.push(c.get_value());
-            if let Some(fine_value) = c.get_fine_value() {
-                output.push(fine_value);
-            }
+            output.extend(c.get_all_values());
         }
 
         if let Some(c) = self.color2.as_ref() {
-            output.push(c.get_value());
-            if let Some(fine_value) = c.get_fine_value() {
-                output.push(fine_value);
-            }
+            output.extend(c.get_all_values());
         }
 
         if let Some(c) = self.color3.as_ref() {
-            output.push(c.get_value());
-            if let Some(fine_value) = c.get_fine_value() {
-                output.push(fine_value);
-            }
+            output.extend(c.get_all_values());
         }
-
-
+        
         output
-
     }
 }

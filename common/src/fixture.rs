@@ -1,15 +1,22 @@
 #![allow(dead_code)]
 pub mod color;
+mod channel;
+mod fixture_type;
 
 use color::{Color, ColorPropertyType, ColorType};
 use crate::fixture::ChannelReservation::{Empty, Pending, Reserved};
 use crate::fixture::FixtureError::{InvalidFixture, InvalidFixtureType};
 use std::collections::{HashMap, HashSet};
+use std::fmt;
+use std::fmt::{Display, Formatter};
 use std::sync::{LazyLock, RwLock};
 use serde::{Deserialize, Serialize};
 
+pub type ChannelValue = u32;
+pub static MAX_FINE_DEGREES :u8 = 4;
+pub type ChannelIndex = u16;
 /// The maximum number of DMX channels per universe (DMX512 standard).
-pub const MAX_CHANNEL: u16 = 512;
+pub const MAX_CHANNEL: ChannelIndex = 512;
 
 struct FixtureList {
     pub fixture_types: HashMap<String, FixtureType>,
@@ -71,9 +78,8 @@ static FIXTURE_LIST: LazyLock<RwLock<FixtureList>> =
 
 /// A single Scheißprogrammhannel with an optional fine channel for 16-bit control.
 pub(crate) struct Channel {
-    pub(crate) value: u16,
-    channel: u16,
-    fine_channel: Option<u16>,
+    pub(crate) value: ChannelValue,
+    channel: ChannelParameter,
 }
 
 impl Channel {
@@ -89,28 +95,23 @@ impl Channel {
     ///
     /// Returns [`ChannelError`] if the resulting channel number exceeds [`MAX_CHANNEL`].
     pub(crate) fn new(
-        channel_numbers: (u16, Option<u16>),
-        default_value: u16,
-        device_channel: u16,
+        channel_numbers: ChannelParameter,
+        default_value: ChannelValue,
+        device_channel: ChannelIndex,
     ) -> Result<Self, ChannelError> {
-        let channel = Self::checked_add(channel_numbers.0, device_channel)?;
-        let fine_channel = if let Some(fine) = channel_numbers.1 {
-            Some(Self::checked_add(fine, device_channel)?)
-        } else {
-            None
-        };
+
+        let channel = channel_numbers.move_indices(device_channel)?;
 
         Ok(Channel {
             value: default_value,
             channel,
-            fine_channel,
         })
     }
 
     //TODO Add the option to have some fixtures go over Universe-Borders
-    fn checked_add(value1: u16, value2: u16) -> Result<u16, ChannelError> {
-        value1
-            .checked_add(value2)
+    fn move_single_channel(channel: ChannelIndex, offset: u16) -> Result<ChannelIndex, ChannelError> {
+        channel
+            .checked_add(offset)
             .filter(|&x| x <= MAX_CHANNEL)
             .ok_or(ChannelError::ChannelOutOfRange)
     }
@@ -145,18 +146,13 @@ impl Channel {
             .ok_or(ChannelError::UniverseOutOfRange)
             .expect("Universe out of range");
 
-        if let Reserved(existing, _) = universe[self.channel as usize].clone() {
-            return Err(ChannelError::ChannelAlreadyInUse(existing));
-        }
-
-        if let Some(fine_channel) = self.fine_channel {
-            if let Reserved(existing, _) = universe[fine_channel as usize].clone() {
-                return Err(ChannelError::ChannelAlreadyInUse(existing));
+        for channel in self.channel.get_channel_indices() {
+            if let Reserved(existing, property) = universe[channel as usize].clone() {
+                return Err(ChannelError::ChannelAlreadyInUse(format!("{}, {}", existing, property)));
             }
 
-            universe[fine_channel as usize] = Pending(fixture_name.to_string());
+            universe[channel as usize] = Pending(fixture_name.to_string());
         }
-        universe[self.channel as usize] = Pending(fixture_name.to_string());
 
         Ok(())
     }
@@ -188,60 +184,42 @@ impl Channel {
             .ok_or(ChannelError::UniverseOutOfRange)
             .expect("Universe out of range.");
 
-        if let Pending(existing) = universe[self.channel as usize].clone() {
-            if existing == fixture_name {
-                universe[self.channel as usize] = Reserved(existing, property_type.clone());
-            } else {
-                panic!(
-                    "A property of another fixture has been set to pending,\
-                 cant reserve channel for {fixture_name}"
-                )
-            }
-        } else {
-            panic!(
-                "Error: In {fixture_name}, a channel has not correctly been set to Pending. \
-            This could happen if the fixture_type has multiple properties bound to the same channel."
-            );
-        }
-
-        if let Some(fine_channel) = self.fine_channel {
-            if let Pending(existing) = universe[fine_channel as usize].clone() {
+        for channel in self.channel.get_channel_indices() {
+            if let Pending(existing) = universe[channel as usize].clone() {
                 if existing == fixture_name {
-                    universe[fine_channel as usize] = Reserved(existing, property_type);
+                    universe[channel as usize] = Reserved(existing, property_type.clone());
                 } else {
                     panic!(
-                        "A property of another fixture has been set to pending,\
-                 cant reserve fine-channel for {fixture_name}"
+                        "A property of another fixture has been set to pending, cant reserve channel for {}",
+                        fixture_name
                     )
                 }
             } else {
                 panic!(
-                    "Error: In {fixture_name}, a fine-channel has not correctly been set to Pending. \
-            This could happen if the fixture_type has multiple properties bound to the same channel."
+                    "Error: In {}, a channel has not correctly been set to Pending. \
+                    This could happen if the fixture_type has multiple properties bound to the same channel.",
+                    fixture_name
                 );
             }
         }
     }
 
-    /// Returns the coarse DMX output value as `(channel_index, 8-bit value)`.
-    pub fn get_value(&self) -> (u16, u8) {
-        (self.channel, self.value.to_be_bytes()[0])
+    /// Returns the coarse DMX output value as `Vec<(channel_index, 8-bit value)>` . If fine, ultra, uber, ... channels
+    /// exist, then they are also part of the Return-Value
+    pub fn get_all_values(&self) -> Vec<(ChannelIndex, u8)> {
+        let bytes = self.value.to_be_bytes();
+
+        self.channel.get_channel_indices()
+            .iter()
+            .zip(bytes)
+            .map(|(&channel, byte)| (channel, byte))
+            .collect()
     }
 
-    /// Returns the fine DMX output value as `(channel_index, 8-bit value)`,
-    /// or `None` if no fine channel is configured.
-    pub fn get_fine_value(&self) -> Option<(u16, u8)> {
-        if let Some(fine_channel) = self.fine_channel {
-            Some((fine_channel, self.value.to_be_bytes()[1]))
-        } else {
-            None
-        }
-    }
-
-    fn get_default_value(property_type: SimplePropertyType) -> u16 {
+    fn get_default_value(property_type: SimplePropertyType) -> ChannelValue {
         match property_type {
-            SimplePropertyType::Pan => u16::MAX / 2,
-            SimplePropertyType::Tilt => u16::MAX / 2,
+            SimplePropertyType::Pan => ChannelValue::MAX / 2,
+            SimplePropertyType::Tilt => ChannelValue::MAX / 2,
             _ => 0,
         }
     }
@@ -302,14 +280,14 @@ pub enum SimplePropertyType {
 ///
 /// * **Simple([`SimplePropertyType`])** – Any non-color property such as dimmer, pan, gobo, etc.
 /// * **Color([`ColorPropertyType`])** – A color channel (RGB, CMY, or HSV).
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq, Hash)]
 pub enum PropertyType {
     Simple(SimplePropertyType),
     Color(ColorPropertyType),
 }
 
 impl PropertyType {
-    fn from_str(property_type: &str) -> Result<PropertyType, FixtureError> {
+    pub fn from_str(property_type: &str) -> Result<PropertyType, FixtureError> {
         if let Ok(property_type) = ColorPropertyType::from_string(property_type) {
             Ok(PropertyType::Color(property_type))
         } else if let Ok(property_type) = SimplePropertyType::from_string(property_type) {
@@ -320,6 +298,59 @@ impl PropertyType {
     }
 }
 
+impl Display for PropertyType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            PropertyType::Simple(property) => write!(f, "{}", property),
+            PropertyType::Color(property) => write!(f, "{}", property),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ChannelParameter {
+    channel: Vec<ChannelIndex>//(ChannelIndex, Option<(ChannelIndex, Option<(ChannelIndex, Option<ChannelIndex>)>)>)
+}
+
+impl ChannelParameter {
+    pub fn new(channel_index: ChannelIndex) -> Self {
+        Self {
+            channel: vec![channel_index],
+        }
+    }
+
+    pub fn add_fine(&mut self, fine_degree: u8, fine_index: ChannelIndex) -> Result<(),ChannelError> {
+        if fine_degree > MAX_FINE_DEGREES {
+            return Err(ChannelError::FineDegreeOutOfRange(fine_degree));
+        }
+
+        let required_len = fine_degree  as usize;
+
+        if self.channel.len() == required_len {
+            self.channel.push(fine_index);
+            Ok(())
+        } else if self.channel.len() > required_len {
+            Err(ChannelError::FineDegreeExists(fine_degree))
+        } else {
+            Err(ChannelError::FineDegreeTooHigh(fine_degree))
+        }
+    }
+
+    pub fn move_indices(&self, difference: ChannelIndex) -> Result<Self, ChannelError> {
+        let mut channels = self.channel.clone();
+
+        for channel_index in channels.iter_mut() {
+            *channel_index = Channel::move_single_channel(*channel_index, difference)?;
+        }
+
+        Ok(Self { channel:channels })
+    }
+
+    pub fn get_channel_indices(&self) -> Vec<ChannelIndex> {
+        self.channel.clone()
+    }
+}
+
 /// A template defining the Scheißprogrammhannel layout for a type of lighting fixture.
 ///
 /// Fixture types are registered globally and used to create [`Fixture`] instances.
@@ -327,7 +358,7 @@ impl PropertyType {
 #[derive(Debug,Serialize,Deserialize)]
 pub struct FixtureType {
     color: Option<ColorType>,
-    properties: HashMap<SimplePropertyType, (u16, Option<u16>)>,
+    properties: HashMap<SimplePropertyType, ChannelParameter>,
     name: String,
 }
 
@@ -339,7 +370,7 @@ pub struct Fixture {
     fixture_type: String,
     color: Option<Color>,
     properties: HashMap<SimplePropertyType, Channel>,
-    start_channel: u16,
+    start_channel: ChannelIndex,
     universe: usize,
     name: String,
 }
@@ -369,37 +400,33 @@ impl FixtureType {
     /// * [`FixtureError::FixtureTypeNameAlreadyInUse`] – if the name is already registered
     pub fn new(
         name: String,
-        properties: HashMap<String, (u16, Option<u16>)>,
+        properties: HashMap<PropertyType, ChannelParameter>,
     ) -> Result<(), FixtureError> {
         let mut color = ColorType::new();
         let mut new_properties = HashMap::new();
         let mut seen_channels = HashSet::new();
 
-        for (key, value) in properties {
-            let mut seen_this_channel = !seen_channels.insert(value.0);
-            let mut out_of_range = value.0 > MAX_CHANNEL;
+        for (key, channels) in &properties {
+            for channel in channels.get_channel_indices() {
+                if !seen_channels.insert(channel) {
+                    return Err(FixtureError::ChannelError(
+                        ChannelError::ChannelAlreadyInUse(key.to_string()),
+                    ));
+                }
 
-            if let Some(channel) = value.1 {
-                seen_this_channel = seen_this_channel || !seen_channels.insert(channel);
-                out_of_range = out_of_range || channel > MAX_CHANNEL;
+                if channel > MAX_CHANNEL {
+                    return Err(FixtureError::ChannelError(ChannelError::ChannelOutOfRange));
+                }
             }
-
-            if seen_this_channel {
-                return Err(FixtureError::ChannelError(
-                    ChannelError::ChannelAlreadyInUse(key),
-                ));
+            
+            match key {
+                PropertyType::Color(color_type) => {
+                    color.checked_add_channel(color_type.clone(), channels.clone())?;
+                }
+                PropertyType::Simple(simple_property) => {
+                    new_properties.insert(simple_property.clone(), channels.clone());
+                }
             }
-
-            if out_of_range {
-                return Err(FixtureError::ChannelError(ChannelError::ChannelOutOfRange));
-            }
-
-            if color.parse(key.clone(), value)? {
-                continue;
-            }
-
-            let property_type = SimplePropertyType::from_string(&key)?;
-            new_properties.insert(property_type, value);
         }
 
         let color = if color.exists() { Some(color) } else { None };
@@ -444,7 +471,7 @@ impl Fixture {
     /// * [`FixtureError::FixtureNameAlreadyInUse`] – if `name` is already registered
     pub fn new(
         fixture_type_name: String,
-        start_channel: u16,
+        start_channel: ChannelIndex,
         universe: usize,
         name: String,
     ) -> Result<(), FixtureError> {
@@ -470,7 +497,7 @@ impl Fixture {
             .iter()
             .map(|(property_type, channel)| {
                 let default_value = Channel::get_default_value(property_type.clone());
-                let channel = Channel::new(*channel, default_value, start_channel)?;
+                let channel = Channel::new(channel.clone(), default_value, start_channel)?;
                 channel.reserve_pending(&*name, universe)?;
                 Ok((property_type.clone(), channel))
             })
@@ -523,9 +550,7 @@ impl Fixture {
     /// * [`FixtureError::InvalidFixture`] – if `fixture_name` is not registered
     /// * [`FixtureError::InvalidPropertyType`] – if `property_type` is not recognized
     /// * [`FixtureError::MissingProperty`] – if the fixture does not have this property
-    pub fn set(fixture_name: String, property_type: &str, value: u16) -> Result<(), FixtureError> {
-        let property_type = PropertyType::from_str(property_type)?;
-
+    pub fn set(fixture_name: String, property_type: PropertyType, value: ChannelValue) -> Result<(), FixtureError> {
         let mut list = FIXTURE_LIST.write().unwrap();
         if let None = list.fixtures.get(&fixture_name) {
             return Err(InvalidFixture(fixture_name.clone()));
@@ -557,15 +582,11 @@ impl Fixture {
         Ok(())
     }
 
-    fn get_channel_values(&self) -> Vec<(u16, u8)> {
-        let mut output = Vec::new();
-
-        self.properties.iter().for_each(|(_, channel)| {
-            output.push(channel.get_value());
-            if let Some(fine_value) = channel.get_fine_value() {
-                output.push(fine_value);
-            }
-        });
+    fn get_channel_values(&self) -> Vec<(ChannelIndex, u8)> {
+        let mut output: Vec<(ChannelIndex, u8)> =
+            self.properties.iter()
+                .flat_map(|(_, channel)| channel.get_all_values())
+                .collect();
 
         if let Some(color) = self.color.as_ref() {
             output.append(&mut color.get_values())
@@ -635,6 +656,34 @@ impl SimplePropertyType {
     }
 }
 
+impl Display for SimplePropertyType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            SimplePropertyType::Dimmer => write!(f, "dimmer"),
+            SimplePropertyType::Strobe => write!(f, "strobe"),
+            SimplePropertyType::Zoom => write!(f, "zoom"),
+            SimplePropertyType::Focus => write!(f, "focus"),
+            SimplePropertyType::Frost => write!(f, "frost"),
+            SimplePropertyType::Prism => write!(f, "prism"),
+            SimplePropertyType::PrismRotation => write!(f, "prism-rotation"),
+            SimplePropertyType::PrismIndexation => write!(f, "prism-index"),
+            SimplePropertyType::GoboRotation => write!(f, "gobo"),
+            SimplePropertyType::GoboRotationSpeed => write!(f, "gobo-rotation"),
+            SimplePropertyType::GoboWheelRotation => write!(f, "gobo-wheel-rotation"),
+            SimplePropertyType::GoboWheelRotationSpeed => write!(f, "gobo-wheel-speed"),
+            SimplePropertyType::Pan => write!(f, "pan"),
+            SimplePropertyType::Tilt => write!(f, "tilt"),
+            SimplePropertyType::FogIntensity => write!(f, "fog-intensity"),
+            SimplePropertyType::FogFanSpeed => write!(f, "fog-fan-speed"),
+            SimplePropertyType::Shutter => write!(f, "shutter"),
+            SimplePropertyType::UV => write!(f, "uv"),
+            SimplePropertyType::Speed => write!(f, "speed"),
+            SimplePropertyType::Other(s) => write!(f, "{}", s),
+
+        }
+    }
+}
+
 /// Errors that can occur when managing fixtures and fixture types.
 #[derive(Debug)]
 pub enum FixtureError {
@@ -667,6 +716,12 @@ pub enum ChannelError {
     UniverseOutOfRange,
     /// The channel is already reserved by the named fixture.
     ChannelAlreadyInUse(String),
+    /// The channel has the same fine-degree multiple times
+    FineDegreeExists(u8),
+    /// The channel has too high fine-degrees, while lower fine-degrees don't exist
+    FineDegreeTooHigh(u8),
+    //The channel has to many fine-channels
+    FineDegreeOutOfRange(u8),
 }
 
 impl From<ChannelError> for FixtureError {

@@ -5,8 +5,9 @@ use std::fmt::Formatter;
 use std::io::{Write};
 use std::sync::{Mutex, OnceLock, RwLock};
 use chrono::{DateTime, Local};
+use serde::{Deserialize, Serialize};
 
-#[derive (Debug,Clone,Copy)]
+#[derive (Debug,Clone,Copy, Serialize, Deserialize)]
 pub enum LogLevel {
     SuccessEvent,
     Info,

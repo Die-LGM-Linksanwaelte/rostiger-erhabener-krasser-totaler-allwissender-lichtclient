@@ -1,0 +1,312 @@
+use std::collections::HashMap;
+use std::fs::read;
+use std::str::SplitAsciiWhitespace;
+use crate::logging::LogLevel;
+use crate::logging::LogLevel::*;
+use crate::{fixture, r_log};
+use crate::fixture::ChannelError::{ChannelAlreadyInUse, ChannelOutOfRange, UniverseOutOfRange, FineDegreeTooHigh, FineDegreeExists, FineDegreeOutOfRange};
+use crate::fixture::FixtureError::{
+    ChannelError, FixtureNameAlreadyInUse, FixtureTypeNameAlreadyInUse, InvalidFixture,
+    InvalidFixtureType, InvalidPropertyType, MissingProperty, MultipleColorOutputTypes,
+};
+use crate::fixture::{ChannelIndex, ChannelValue, ChannelParameter, Fixture, FixtureType, PropertyType, MAX_FINE_DEGREES};
+use crate::fixture::color::ColorPropertyType;
+use crate::cli::cli_actions;
+use crate::cli::cli_actions::CliAction;
+use crate::cli::cli_actions::CliAction::{FixtureAdd, FixtureGetType, FixtureSet, OtherCommands};
+
+
+pub fn run_command(command: String) -> (LogLevel, String) {
+    match parse_cli_string(command) {
+        Ok(command) => command.execute(),
+        Err(e) => (UserError, e.to_string())
+    }
+}
+
+pub(crate) fn parse_cli_string(command_string: String) -> Result<CliAction,String> {
+    let mut line_iter = command_string.split_ascii_whitespace();
+    let arg_count = line_iter.clone().count().saturating_sub(1);
+
+    match line_iter.next() {
+        Some("help") => Ok(CliAction::Help),
+
+        Some("new") if arg_count % 2 == 1 && arg_count > 1 => {
+            parse_new_fixture_type(line_iter)
+        }
+
+        Some("new") => {
+            Err("Error: \"new\"-Command needs a name for the new Fixture-Type, and then a list of properties with \
+            their channels.".to_string())
+        }
+
+        Some("add") if arg_count == 4 => {
+            parse_new_fixture(line_iter)
+        }
+
+        Some("add") => {
+            Err("Error: \"add\" needs a name, a fixture-type, a start-channel and a universe as arguments".to_string())
+        }
+
+        Some("set") if arg_count == 3 => {
+            parse_set_value(line_iter)
+        }
+
+        Some("set") => {
+            Err("Error: \"set\" needs a fixture, a property, and a value as arguments".to_string())
+        }
+
+        Some("type") if arg_count == 1 => {
+            parse_get_type(line_iter)
+        }
+
+        Some("type") => {
+            Err("Error: \"type\" needs a fixture as argument".to_string())
+        }
+
+        Some(command) => {
+            Ok(OtherCommands {
+                command: command.to_string(),
+            })
+        }
+
+        _ => Err("Unknown command. Please enter help, to get a list of commands.".to_string())
+    }
+}
+
+/// Checks if the given string is a valid command and executes it.
+/// See '../help.txt' for a list of available commands.
+pub fn parse_debug_command(line: String) -> (LogLevel, String) {
+    let mut line_iter = line.split_ascii_whitespace();
+    //We want to check the arg count, we don't want the command counted
+    let arg_count = line_iter.clone().count().saturating_sub(1);
+    match line_iter.next() {
+
+        Some("create_debug") if cfg!(all(debug_assertions, not(test))) => {
+            let fixture_type_name = "rgb".to_string();
+            let universe = 0;
+
+            let mut channels = HashMap::new();
+            channels.insert(PropertyType::Color(ColorPropertyType::Red), ChannelParameter::new(0));
+            channels.insert(PropertyType::Color(ColorPropertyType::Green), ChannelParameter::new(1));
+            channels.insert(PropertyType::Color(ColorPropertyType::Blue), ChannelParameter::new(2));
+
+            let new_command = CliAction::FixtureNew {
+                name: fixture_type_name.clone(),
+                channels,
+            };
+
+            if let (UserError,error) = new_command.execute() {
+                return (UserError,error.to_string());
+            }
+            for i in 0..50 {
+                let name = i.to_string();
+                let start_channel = i * 3;
+
+                let add_command = CliAction::FixtureAdd {
+                    name,
+                    fixture_type_name: fixture_type_name.clone(),
+                    universe,
+                    channel: start_channel
+                };
+
+                match add_command.execute() {
+                    (UserSuccess, _) => continue,
+                    x => return x
+                }
+            }
+            (UserSuccess,"Created the debug-fixtures".to_string())
+        }
+
+        Some("set_all") if arg_count == 2 && cfg!(all(debug_assertions, not(test))) => {
+            let property_name = line_iter.next().unwrap().to_string();
+            let value = line_iter.next().unwrap().to_string();
+
+            let property_type = match PropertyType::from_str(&*property_name) {
+                Ok(property_type) => property_type,
+                Err(InvalidPropertyType(property_type)) => {
+                    return (UserError,format!("Error: \"{property_type}\" is not a valid PropertyType"))
+                }
+                Err(_) => unreachable!() //All possible Errors have been handles
+            };
+
+            let value = match value.parse::<ChannelValue>() {
+                Ok(value) => value,
+                Err(_) => {
+                    return (UserError,format!("Error: \"{value}\" is not a valid value."))
+                }
+            };
+
+
+
+            for i in 0..50 {
+                let name = i.to_string();
+                let set_command = CliAction::FixtureSet {
+                    name,
+                    property_type: property_type.clone(),
+                    value,
+                };
+
+                match set_command.execute() {
+                    (UserSuccess, _) => continue,
+                    x => return x
+                }
+            }
+
+            (UserSuccess,format!("Set {} to {} in all debug-fixtures", property_type, value))
+        }
+
+        Some("break") if cfg!(all(debug_assertions, not(test))) => {
+            let _dmx_config = fixture::DMX_CONFIGURATION.read().unwrap();
+            let _universes = fixture::calculate_dmx_values();
+            (Info,"Add a breakpoint at this point in the code to check the datastructures".to_string())
+        }
+
+        Some(command) => {
+            (UserError,format!("Unknown command \"{command}\". Please enter help, to get a list of commands."))
+        }
+
+        None => (UserError,"Unknown command. Please enter help, to get a list of commands.".to_string()),
+    }
+}
+
+fn parse_new_fixture_type(mut args: SplitAsciiWhitespace) -> Result<CliAction,String> {
+    let name = args.next().unwrap().to_string();
+    let mut properties: HashMap<PropertyType, ChannelParameter> = HashMap::new();
+
+    while let Some(property_name) = args.next() {
+        //We can do that without throwing an Error, because args has an even number of elements at this point
+        let channel = args.next().unwrap();
+
+        let channel_index = match channel.parse::<ChannelIndex>() {
+            Ok(channel) => channel,
+            Err(_) => {
+                return Err("Error: \"{channel}\" is not a valid channel-number".to_string());
+            }
+        };
+
+        //fine-channels
+        if let Some((property_name, suffix)) = property_name.rsplit_once("_f") {
+
+            let fine_degree = if suffix.is_empty() {
+                1
+            } else {
+                match suffix.parse::<u8>() {
+                    Ok(fine_degree) => fine_degree,
+                    Err(_) => return Err(format!("Error: \"{suffix}\" is not a valid fine degree"))
+                }
+            };
+
+            let property_type = match PropertyType::from_str(property_name) {
+                Ok(property_type) => property_type,
+                Err(InvalidPropertyType(property_type)) => {
+                    return Err(format!("Error: \"{property_type}\" is not a valid PropertyType"))
+                }
+                Err(_) => unreachable!() //All possible Errors have been handles
+            };
+
+            match properties.get_mut(&property_type) {
+                Some(channel_object) => {
+                    match channel_object.add_fine(fine_degree, channel_index) {
+                        Err(FineDegreeTooHigh(f)) =>
+                            return Err(format!("Fine-degree {} is too high, add the lower ones first", f)),
+                        Err(FineDegreeExists(f)) =>
+                            return Err(format!("Fine-degree {} already exists", f)),
+                        Err(FineDegreeOutOfRange(f)) =>
+                            return Err(format!("Fine-degree {} out of range, must be lower than {}",
+                                               f, MAX_FINE_DEGREES)),
+                        Ok(()) => {}
+                        _ => unreachable!()
+                    }
+                }
+
+                None => return Err(format!(
+                    "Error: Cannot add fine channel for '{}' because the coarse channel is missing! Add '{}' first.",
+                    property_name, property_type)),
+            }
+        } else {
+            //Non-fine channels
+
+            let property_type = match PropertyType::from_str(property_name) {
+                Ok(property_type) => property_type,
+                Err(InvalidPropertyType(property_type)) => {
+                    return Err(format!("Error: \"{property_type}\" is not a valid PropertyType"))
+                }
+                Err(_) => unreachable!() //All possible Errors have been handles
+            };
+
+            if !properties.contains_key(&property_type) {
+                properties.insert(property_type, ChannelParameter::new(channel_index));
+            } else {
+                return Err(format!("{property_name} can only have one coarse Channel"))
+            }
+        }
+    }
+    Ok(CliAction::FixtureNew {
+        name,
+        channels: properties,
+    })
+
+}
+
+fn parse_new_fixture(mut args: SplitAsciiWhitespace) -> Result<CliAction,String> {
+    let name = args.next().unwrap().to_string();
+    let fixture_type_name = args.next().unwrap().to_string();
+    let universe = args.next().unwrap().to_string();
+    let channel = args.next().unwrap().to_string();
+
+    let universe = match universe.parse::<usize>() {
+        Ok(universe) => universe,
+        Err(_) => {
+            return Err(format!("Error: \"{universe}\" is not a valid universe-number"))
+        }
+    };
+
+    let channel = match channel.parse::<ChannelIndex>() {
+        Ok(channel) => channel,
+        Err(_) => {
+            return Err(format!("Error: \"{channel}\" is not a valid channel-number"))
+        }
+    };
+
+    Ok(FixtureAdd {
+        name,
+        fixture_type_name,
+        channel,
+        universe,
+    })
+}
+
+fn parse_set_value(mut args: SplitAsciiWhitespace) -> Result<CliAction,String> {
+    let name = args.next().unwrap().to_string();
+    let property_name = args.next().unwrap().to_string();
+    let value = args.next().unwrap().to_string();
+
+    let property_type = match PropertyType::from_str(&property_name) {
+        Ok(property_type) => property_type,
+        Err(InvalidPropertyType(property_type)) => {
+            return Err(format!("Error: \"{property_type}\" is not a valid PropertyType"))
+        }
+        Err(_) => unreachable!() //All possible Errors have been handles
+    };
+
+    let value = match value.parse::<ChannelValue>() {
+        Ok(value) => value,
+        Err(_) => {
+            return Err(format!("Error: \"{value}\" is not a valid value."))
+        }
+    };
+
+    Ok(FixtureSet {
+        name,
+        property_type,
+        value,
+    })
+}
+
+fn parse_get_type(mut args: SplitAsciiWhitespace) -> Result<CliAction,String> {
+    let fixture_name = args.next().unwrap().to_string();
+
+    Ok(FixtureGetType {
+        fixture_name,
+    })
+}
