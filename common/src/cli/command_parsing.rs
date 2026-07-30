@@ -64,8 +64,9 @@ pub(crate) fn parse_cli_string(command_string: String) -> Result<CliAction,Strin
         }
 
         Some(command) => {
+            let args = line_iter.collect::<Vec<_>>().join(" ");
             Ok(OtherCommands {
-                command: command.to_string(),
+                command: format!("{} {}",command,args)
             })
         }
 

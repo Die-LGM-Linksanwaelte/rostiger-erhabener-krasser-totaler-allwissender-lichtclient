@@ -2,7 +2,8 @@ use std::cmp::{max, min, PartialEq};
 use std::fmt::{Display, Formatter};
 use serde::{Deserialize, Serialize};
 use OutputType::{CMY, HSV, RGB};
-use crate::fixture::{Channel, ChannelError, ChannelIndex, ChannelParameter, ChannelValue, FixtureError, PropertyType};
+use crate::fixture::{Channel, ChannelError, ChannelIndex, ChannelValue, FixtureError, PropertyType};
+use crate::fixture::channel::ChannelParameter;
 
 
 type SignedChannelValue = i64;
@@ -353,7 +354,7 @@ impl Color {
         self.saturation = saturation;
         self.value = value;
         //Achtung: es folgt eine unstetige Kackfunktion
-        let c = (value as FloatChannelValue * 
+        let c = (value as FloatChannelValue *
             (saturation as FloatChannelValue / ChannelValue::MAX as FloatChannelValue)).round() as ChannelValue;
         let m = value.saturating_sub(c);
         let h = hue as FloatChannelValue / (ChannelValue::MAX as FloatChannelValue / 6 as FloatChannelValue);
@@ -433,7 +434,7 @@ impl Color {
         if let Some(c) = self.color3.as_ref() {
             output.extend(c.get_all_values());
         }
-        
+
         output
     }
 }
