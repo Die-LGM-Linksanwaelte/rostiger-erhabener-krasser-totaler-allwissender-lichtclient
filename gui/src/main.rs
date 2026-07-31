@@ -16,7 +16,8 @@ use crate::network::udp_client::MAX_CHANNEL;
 use network::tcp_client::TcpClient;
 use panels::Tab;
 use crate::controller::UiEvent;
-use crate::network::connection_state::ConnectionState;
+use network::connection_state;
+use network::connection_state::{ConnectionState, SessionState};
 
 pub static UI_EVENT_SENDER: LazyLock<RwLock<Option<Sender<UiEvent>>>> = LazyLock::new(||{
     RwLock::new(None)
@@ -60,6 +61,7 @@ pub struct MyApp {
     ui_event_receiver: Receiver<UiEvent>,
     tcp_write_sender: Option<Sender<TcpClientMessage>>,
     connection_state: ConnectionState,
+    session_state: SessionState,
     role: UserRole,
     password: String,
     draft_username: String,
@@ -97,6 +99,7 @@ impl MyApp {
             ui_event_receiver,
             tcp_write_sender: None,
             connection_state: ConnectionState::Disconnected,
+            session_state: SessionState::LoggedOut,
             role: UserRole::Programmer,
             password: String::new(),
             draft_username: String::new(),
@@ -119,8 +122,8 @@ impl eframe::App for MyApp {
             }
         }
 
-        controller::handle_incoming_network_data(&mut self.tcp_listen_receiver, &mut self.tree, &mut self.connection_state);
-        controller::handle_events(&self.ui_event_receiver, &self.tcp_write_sender, &mut self.connection_state);
+        controller::handle_incoming_network_data(&mut self.tcp_listen_receiver, &mut self.tree, &mut self.session_state);
+        controller::handle_events(&self.ui_event_receiver, &self.tcp_write_sender, &mut self.connection_state, &mut self.session_state);
 
         // --- TOP BAR ---
         egui::TopBottomPanel::top("top_bar").show(ctx, |ui| {
@@ -134,12 +137,24 @@ impl eframe::App for MyApp {
                         self.show_connection_settings = true;
                         ui.close_menu();
                     }
-                    if ui.button("Session Settings").clicked() {
+                    if ui.add_enabled(
+                        matches!(self.connection_state, ConnectionState::Connected),
+                        egui::Button::new("Session Settings")
+                    ).clicked() {
                         self.show_session_settings = true;
                         self.draft_username = self.username.clone();
                         self.draft_role = self.role.clone();
                         self.password.clear(); // just to be safe
                         ui.close_menu();
+                    }
+                    if ui.add_enabled(
+                        matches!(self.session_state, SessionState::LoggedIn),
+                        egui::Button::new("Logout")
+                    ).clicked() {
+                        let event = UiEvent::LogoutRequest;
+                        if let Err(e) = self.ui_event_sender.send(event) {
+                            eprintln!("Failed to send UiEvent: {}", e);
+                        }
                     }
 
                 });
@@ -164,16 +179,19 @@ impl eframe::App for MyApp {
                 let status_color = match self.connection_state {
                     ConnectionState::Disconnected | ConnectionState::Error => egui::Color32::RED,
                     ConnectionState::ConnectionPending => egui::Color32::YELLOW,
-                    ConnectionState::LoginFailed(_) => egui::Color32::YELLOW,
-                    ConnectionState::LoggedIn => egui::Color32::GREEN,
-                    ConnectionState::LoginPending | ConnectionState::LoggedOut => egui::Color32::YELLOW,
-                    ConnectionState::Connected => egui::Color32::GREEN,
+                    ConnectionState::Connected => {
+                        match self.session_state {
+                            SessionState::LoginFailed(_) => egui::Color32::YELLOW,
+                            SessionState::LoggedIn => egui::Color32::GREEN,
+                            SessionState::LoginPending | SessionState::LoggedOut => egui::Color32::YELLOW,
+                        }
+                    }
                 };
                 // Ganz links den Punkt als Vektorgrafik zeichnen (so ist er garantiert immer ein perfekter Kreis)
                 let (rect, _) = ui.allocate_exact_size(egui::vec2(8.0, 8.0), egui::Sense::hover());
                 ui.painter().circle_filled(rect.center(), 4.0, status_color);
-                if let ConnectionState::LoggedIn = self.connection_state {
-                    ui.label(format!("{} | {}", self.username.to_string(), self.role.to_string()));
+                if let SessionState::LoggedIn = self.session_state {
+                    ui.label(format!("{} | {}", self.username, self.role.to_string()));
                 } else {
                     ui.label("Logged out");
                 }
@@ -290,7 +308,7 @@ impl eframe::App for MyApp {
                         });
                     ui.add_space(10.0);
 
-                    if let ConnectionState::LoginFailed(ref reason) = self.connection_state {
+                    if let SessionState::LoginFailed(ref reason) = self.session_state {
                         ui.label(egui::RichText::new(format!("Login fehlgeschlagen: {}", reason)).color(egui::Color32::RED));
                         ui.add_space(10.0);
                     }

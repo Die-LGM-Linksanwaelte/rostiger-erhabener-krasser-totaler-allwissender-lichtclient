@@ -1,4 +1,4 @@
-use crate::network::connection_state::ConnectionState;
+use crate::network::connection_state::{ConnectionState, SessionState};
 use crate::panels::Tab;
 use common::networking::messages::{TcpClientMessage, TcpServerMessage};
 use egui_dock::DockState;
@@ -6,7 +6,7 @@ use std::sync::mpsc::{Receiver, Sender};
 use crate::panels::terminal::TextFragment;
 use eframe::egui::Color32;
 
-pub(crate) fn handle_incoming_network_data(tcp_receiver: &mut Option<Receiver<TcpServerMessage>>, tree: &mut DockState<Tab>, connection_state: &mut ConnectionState) {
+pub(crate) fn handle_incoming_network_data(tcp_receiver: &mut Option<Receiver<TcpServerMessage>>, tree: &mut DockState<Tab>, session_state: &mut SessionState) {
     if let Some(tcp_receiver) = tcp_receiver{
         while let Ok(msg) = tcp_receiver.try_recv() {
             match msg {
@@ -34,11 +34,11 @@ pub(crate) fn handle_incoming_network_data(tcp_receiver: &mut Option<Receiver<Tc
                 }
                 TcpServerMessage::LoginOk {token } => {
                     println!("\x1b[32m[System] Login Successful! Token: {}\x1b[0m", token);
-                    *connection_state = ConnectionState::LoggedIn;
+                    *session_state = SessionState::LoggedIn;
                 }
                 TcpServerMessage::LoginFailed { reason } => {
                     println!("\x1b[91m[System] Login Failed: {}\x1b[0m", reason);
-                    *connection_state = ConnectionState::LoginFailed(reason);
+                    *session_state = SessionState::LoginFailed(reason);
                 }
                 _ => {}
             }
@@ -53,13 +53,16 @@ pub enum UiEvent {
         user_name: String,
         user_role: common::networking::messages::UserRole,
     },
-    SetConnectionState { state: ConnectionState }
+    SetConnectionState { state: ConnectionState },
+    LogoutRequest,
+
 }
 
 pub(crate) fn handle_events(
     ui_receiver: &Receiver<UiEvent>,
     tcp_sender: &Option<Sender<TcpClientMessage>>,
     connection_state: &mut ConnectionState,
+    session_state: &mut SessionState,
 ) {
     while let Ok(event) = ui_receiver.try_recv() {
         match event {
@@ -86,7 +89,7 @@ pub(crate) fn handle_events(
                     if let Err(e) = tcp_sender.send(msg) {
                         eprintln!("Failed to send LoginRequest: {}", e);
                     } else {
-                        *connection_state = ConnectionState::LoginPending;
+                        *session_state = SessionState::LoginPending;
                     }
                 } else {
                     eprintln!("Failed to send ExecuteCommand: tcp sender doesn't exist");
@@ -96,6 +99,18 @@ pub(crate) fn handle_events(
                 state,
             } => {
                 *connection_state = state;
+            }
+            UiEvent::LogoutRequest => {
+                let msg = TcpClientMessage::Logout;
+                if let Some(tcp_sender) = tcp_sender {
+                    if let Err(e) = tcp_sender.send(msg) {
+                        eprintln!("Failed to send LogoutRequest: {}", e);
+                    } else {
+                        *session_state = SessionState::LoggedOut;
+                    }
+                } else {
+                    eprintln!("Failed to send ExecuteCommand: tcp sender doesn't exist");
+                }
             }
         }
     }

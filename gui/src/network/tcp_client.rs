@@ -99,6 +99,7 @@ impl TcpClient {
                     "\x1b[32m[System] Version {} verifiziert!\x1b[0m",
                     client_version
                 );
+                Self::set_connection_state(ConnectionState::Connected);
             }
             HandshakeResponse::Mismatch { server_version } => {
                 // HIER IST DEINE ABSOLUT PERFEKTE FEHLERMELDUNG:

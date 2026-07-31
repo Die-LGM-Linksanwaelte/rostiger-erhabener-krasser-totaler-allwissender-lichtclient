@@ -17,6 +17,7 @@ pub struct TerminalPanel {
     pub tab_id: u32,
     input_text: String,
     history: Vec<Vec<TextFragment>>,
+    command_history: Vec<String>,
     history_length: usize,
     position_in_history: usize,
     settings_open: bool,
@@ -40,6 +41,7 @@ impl TerminalPanel {
             tab_id,
             input_text: String::new(),
             history: vec![initial_line],
+            command_history: Vec::new(),
             history_length: 100,
             position_in_history: 0,
             settings_open: false,
@@ -158,6 +160,10 @@ impl TerminalPanel {
                                     color: Color32::WHITE,
                                 },
                             ]);
+                            
+                            self.command_history.push(self.input_text.clone());
+                            self.position_in_history = 0; // Reset history position
+
                             if let Some(sender) = UI_EVENT_SENDER.read().unwrap().as_ref() {
                                 if let Err(e) = sender.send(UiEvent::SendTerminalCommand {
                                     id: self.tab_id,
@@ -171,25 +177,25 @@ impl TerminalPanel {
                         }
                     }
                     if ui.input(|i| i.key_pressed(egui::Key::ArrowUp)) {
-                        if self.position_in_history < self.history.len() - 1 {
-                            self.position_in_history += 1;
+                        if !self.command_history.is_empty() {
+                            if self.position_in_history < self.command_history.len() {
+                                self.position_in_history += 1;
+                            }
+                            self.input_text = self.command_history
+                                [self.command_history.len() - self.position_in_history]
+                                .clone();
                         }
-                        self.input_text = self.history
-                            [self.history.len() - self.position_in_history][1]
-                            .text
-                            .clone();
                     }
 
                     if ui.input(|i| i.key_pressed(egui::Key::ArrowDown)) {
                         if self.position_in_history > 1 {
                             self.position_in_history -= 1;
-                            self.input_text = self.history
-                                [self.history.len() - self.position_in_history][1]
-                                .text
+                            self.input_text = self.command_history
+                                [self.command_history.len() - self.position_in_history]
                                 .clone();
-                        } else if self.position_in_history > 0 {
-                            self.position_in_history -= 1;
-                            self.input_text = "".to_string();
+                        } else if self.position_in_history == 1 {
+                            self.position_in_history = 0;
+                            self.input_text.clear();
                         }
                     }
                 });

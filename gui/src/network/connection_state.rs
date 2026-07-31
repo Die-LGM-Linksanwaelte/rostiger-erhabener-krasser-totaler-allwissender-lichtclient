@@ -4,6 +4,10 @@ pub enum ConnectionState {
     Disconnected,
     Error,
     ConnectionPending,
+}
+
+#[derive(PartialEq, Debug, Clone)]
+pub enum SessionState {
     LoginPending,
     LoggedOut,
     LoggedIn,
