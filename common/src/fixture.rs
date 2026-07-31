@@ -16,6 +16,9 @@ use crate::fixture::channel::{Channel, ChannelReservation, SimplePropertyType};
 
 pub type ChannelValue = u32;
 pub static MAX_FINE_DEGREES :u8 = 4;
+pub type SignedChannelValue = i64;
+pub type FloatChannelValue = f64;
+
 pub type ChannelIndex = u16;
 /// The maximum number of DMX channels per universe (DMX512 standard).
 pub const MAX_CHANNEL: ChannelIndex = 512;

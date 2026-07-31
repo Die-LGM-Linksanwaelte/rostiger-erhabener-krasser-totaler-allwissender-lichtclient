@@ -2,12 +2,10 @@ use std::cmp::{max, min, PartialEq};
 use std::fmt::{Display, Formatter};
 use serde::{Deserialize, Serialize};
 use OutputType::{CMY, HSV, RGB};
-use crate::fixture::{Channel, ChannelError, ChannelIndex, ChannelValue, FixtureError, PropertyType};
+use crate::fixture::{Channel, ChannelError, ChannelIndex, ChannelValue, FixtureError, FloatChannelValue, PropertyType, SignedChannelValue};
 use crate::fixture::channel::ChannelParameter;
 
 
-type SignedChannelValue = i64;
-type FloatChannelValue = f64;
 
 /// Represents a color with its channel values for all supported color models
 /// (RGB, CMY, and HSV).

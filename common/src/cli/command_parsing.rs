@@ -1,15 +1,21 @@
 use std::collections::HashMap;
 use std::fs::read;
-use std::str::SplitAsciiWhitespace;
+use std::str::{FromStr, SplitAsciiWhitespace};
 use crate::logging::LogLevel;
 use crate::logging::LogLevel::*;
 use crate::{fixture, r_log};
-use crate::fixture::ChannelError::{ChannelAlreadyInUse, ChannelOutOfRange, UniverseOutOfRange, FineDegreeTooHigh, FineDegreeExists, FineDegreeOutOfRange};
+use crate::fixture::ChannelError::{
+    ChannelAlreadyInUse, ChannelOutOfRange, UniverseOutOfRange, FineDegreeTooHigh, FineDegreeExists,
+    FineDegreeOutOfRange
+};
 use crate::fixture::FixtureError::{
     ChannelError, FixtureNameAlreadyInUse, FixtureTypeNameAlreadyInUse, InvalidFixture,
     InvalidFixtureType, InvalidPropertyType, MissingProperty, MultipleColorOutputTypes,
 };
-use crate::fixture::{ChannelIndex, ChannelValue, ChannelParameter, Fixture, FixtureType, PropertyType, MAX_FINE_DEGREES};
+use crate::fixture::{
+    ChannelIndex, ChannelValue, ChannelParameter, Fixture, FixtureType, PropertyType, MAX_FINE_DEGREES,
+    FloatChannelValue
+};
 use crate::fixture::color::ColorPropertyType;
 use crate::cli::cli_actions;
 use crate::cli::cli_actions::CliAction;
@@ -130,14 +136,10 @@ pub fn parse_debug_command(line: String) -> (LogLevel, String) {
                 Err(_) => unreachable!() //All possible Errors have been handles
             };
 
-            let value = match value.parse::<ChannelValue>() {
+            let value = match parse_cli_value(&*value) {
                 Ok(value) => value,
-                Err(_) => {
-                    return (UserError,format!("Error: \"{value}\" is not a valid value."))
-                }
+                Err(e) => return (UserError,e.to_string()),
             };
-
-
 
             for i in 0..50 {
                 let name = i.to_string();
@@ -290,12 +292,7 @@ fn parse_set_value(mut args: SplitAsciiWhitespace) -> Result<CliAction,String> {
         Err(_) => unreachable!() //All possible Errors have been handles
     };
 
-    let value = match value.parse::<ChannelValue>() {
-        Ok(value) => value,
-        Err(_) => {
-            return Err(format!("Error: \"{value}\" is not a valid value."))
-        }
-    };
+    let value = parse_cli_value(&*value)?;
 
     Ok(FixtureSet {
         name,
@@ -310,4 +307,29 @@ fn parse_get_type(mut args: SplitAsciiWhitespace) -> Result<CliAction,String> {
     Ok(FixtureGetType {
         fixture_name,
     })
+}
+
+fn parse_cli_value(input: &str) -> Result<ChannelValue,String> {
+
+    let sanitized_input = input.trim().replace("_", "");
+    let input_str = sanitized_input.as_str();
+
+    if let Some(percent_string) = input_str.strip_suffix("%") {
+        match percent_string.parse::<FloatChannelValue>() {
+            Ok(p) if (0.0..=100.0).contains(&p) => {
+                let fraction = p / 100.0;
+                let raw_value = fraction * (ChannelValue::MAX as FloatChannelValue);
+
+                Ok(raw_value.round() as ChannelValue)
+            }
+            Ok(_) => Err(format!("\"{}\" must be between 0 and 100.", percent_string)),
+            Err(_) => Err(format!("Invalid percantage format {}", percent_string)),
+        }
+    } else if let Some(hex_str) = input_str.strip_prefix("#") {
+        ChannelValue::from_str_radix(hex_str, 16)
+            .map_err(|_| format!("Invalid hex format {}", hex_str))
+    } else {
+        input_str.parse::<ChannelValue>()
+            .map_err(|_| format!("Invalid value {}. ", input_str))
+    }
 }
