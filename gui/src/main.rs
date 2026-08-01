@@ -1,10 +1,8 @@
-use std::cmp::PartialEq;
 use common::networking::messages::{TcpClientMessage, TcpServerMessage};
 use eframe::egui;
 use egui_dock::{DockArea, DockState, TabViewer};
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{mpsc, LazyLock, RwLock};
-use std::thread;
 use common::networking::messages::UserRole;
 
 mod controller;
@@ -16,7 +14,6 @@ use crate::network::udp_client::MAX_CHANNEL;
 use network::tcp_client::TcpClient;
 use panels::Tab;
 use crate::controller::UiEvent;
-use network::connection_state;
 use network::connection_state::{ConnectionState, SessionState};
 
 pub static UI_EVENT_SENDER: LazyLock<RwLock<Option<Sender<UiEvent>>>> = LazyLock::new(||{
@@ -31,8 +28,6 @@ fn main() -> eframe::Result<()> {
         ..Default::default()
     };
 
-    //let tcp_client = network::tcp_client("bla", 1234);
-
     eframe::run_native(
         "Docking App",
         options,
@@ -40,36 +35,49 @@ fn main() -> eframe::Result<()> {
     )
 }
 
-#[derive(PartialEq, Debug, Clone, Copy)]
-enum Theme {
-    Dark,
-    Light,
-}
-
+/// The main application state.
+/// Holds the docking tree, settings flags, user credentials, network states, and channels.
 pub struct MyApp {
+    /// The docking state tree holding all tabs.
     tree: DockState<Tab>,
-    show_settings_window: bool,
+    /// Whether the session settings window is visible.
     show_session_settings: bool,
+    /// Whether the connection settings window is visible.
     show_connection_settings: bool,
+    /// The IP address and port of the target server.
     server_address: String,
+    /// The currently logged-in username.
     username: String,
-    current_theme: Theme,
+    /// The ID assigned to the next created tab.
     next_tab_id: u32,
+    /// Receiver channel for incoming DMX Universe data.
     dmx_receiver: Receiver<(u8, [u8; MAX_CHANNEL])>,
+    /// Receiver channel for incoming TCP messages from the server.
     tcp_listen_receiver: Option<Receiver<TcpServerMessage>>,
+    /// Sender channel for emitting UI events to the controller.
     ui_event_sender: Sender<UiEvent>,
+    /// Receiver channel for handling UI events in the controller loop.
     ui_event_receiver: Receiver<UiEvent>,
+    /// Sender channel for sending TCP messages to the server.
     tcp_write_sender: Option<Sender<TcpClientMessage>>,
+    /// The current state of the TCP network connection.
     connection_state: ConnectionState,
+    /// The current state of the user session (login status).
     session_state: SessionState,
+    /// The currently active role of the user.
     role: UserRole,
+    /// The password used during the login request (cleared from memory after use).
     password: String,
+    /// Draft variable for the username, used in the settings window before applying.
     draft_username: String,
+    /// Draft variable for the role, used in the settings window before applying.
     draft_role: UserRole,
 }
 
 
 impl MyApp {
+    /// Creates a new instance of the application with default settings.
+    /// Also initializes the UDP listener for DMX data and sets up the primary communication channels.
     fn new(ctx: egui::Context) -> Self {
         let (dmx_sender, dmx_receiver) = mpsc::channel();
 
@@ -86,12 +94,10 @@ impl MyApp {
 
         Self {
             tree: DockState::new(vec![Tab::Terminal(initial_terminal_panel)]), // Hier die Instanz verwenden
-            show_settings_window: false,
             show_session_settings: false,
             show_connection_settings: false,
             server_address: "127.0.0.1".to_string(),
             username: "Default User".to_string(),
-            current_theme: Theme::Dark,
             next_tab_id: 1,
             dmx_receiver,
             tcp_listen_receiver: None,
@@ -110,29 +116,24 @@ impl MyApp {
 
 impl eframe::App for MyApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        // --- DMX-Daten aus dem Puffer abholen ---
-        // (Der Context wurde bereits vom UDP-Thread geweckt, daher läuft diese Funktion jetzt)
-        while let Ok((universe_id, dmx_data)) = self.dmx_receiver.try_recv() {
-            for (_, tab) in self.tree.iter_all_tabs_mut() {
-                if let Tab::Universe(panel) = tab {
-                    if panel.selected_universe - 1 == universe_id {
-                        panel.dmx_data.copy_from_slice(&dmx_data);
-                    }
-                }
-            }
-        }
-
+        controller::handle_dmx_data(&self.dmx_receiver, &mut self.tree);
         controller::handle_incoming_network_data(&mut self.tcp_listen_receiver, &mut self.tree, &mut self.session_state);
         controller::handle_events(&self.ui_event_receiver, &self.tcp_write_sender, &mut self.connection_state, &mut self.session_state);
 
-        // --- TOP BAR ---
+        self.draw_top_bar(ctx);
+        self.draw_bottom_bar(ctx);
+        self.draw_central_panel(ctx);
+        self.draw_connection_settings(ctx);
+        self.draw_session_settings(ctx);
+    }
+}
+
+impl MyApp {
+    /// Draws the top menu bar, containing the connection and session controls.
+    fn draw_top_bar(&mut self, ctx: &egui::Context) {
         egui::TopBottomPanel::top("top_bar").show(ctx, |ui| {
             egui::menu::bar(ui, |ui| {
                 ui.menu_button("Connection", |ui| {
-                    //if ui.button("Settings").clicked() { //TODO settings fenster machen!
-                    //    self.show_settings_window = true;
-                    //    ui.close_menu();
-                    //}
                     if ui.button("Connection Settings").clicked() {
                         self.show_connection_settings = true;
                         ui.close_menu();
@@ -173,48 +174,21 @@ impl eframe::App for MyApp {
                 });
             });
         });
+    }
 
-        egui::TopBottomPanel::bottom("bottom_bar").show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                let status_color = match self.connection_state {
-                    ConnectionState::Disconnected | ConnectionState::Error => egui::Color32::RED,
-                    ConnectionState::ConnectionPending => egui::Color32::YELLOW,
-                    ConnectionState::Connected => {
-                        match self.session_state {
-                            SessionState::LoginFailed(_) => egui::Color32::YELLOW,
-                            SessionState::LoggedIn => egui::Color32::GREEN,
-                            SessionState::LoginPending | SessionState::LoggedOut => egui::Color32::YELLOW,
-                        }
-                    }
-                };
-                // Ganz links den Punkt als Vektorgrafik zeichnen (so ist er garantiert immer ein perfekter Kreis)
-                let (rect, _) = ui.allocate_exact_size(egui::vec2(8.0, 8.0), egui::Sense::hover());
-                ui.painter().circle_filled(rect.center(), 4.0, status_color);
-                if let SessionState::LoggedIn = self.session_state {
-                    ui.label(format!("{} | {}", self.username, self.role.to_string()));
-                } else {
-                    ui.label("Logged out");
-                }
-
-                // Rest rechtsbündig ausrichten
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.label(format!(
-                        "R.E.K.T.A.L. Version: {}",
-                        env!("CARGO_PKG_VERSION")
-                    ));
-                });
-            });
-        });
-
-        // --- DOCKING AREA ---
+    /// Draws the central docking panel, managing all active tabs (Terminals, Universes, etc.).
+    fn draw_central_panel(&mut self, ctx: &egui::Context) {
         egui::CentralPanel::default().show(ctx, |ui| {
             let mut tab_viewer = MyTabViewer {};
             DockArea::new(&mut self.tree)
                 .style(egui_dock::Style::from_egui(ui.style().as_ref()))
                 .show_inside(ui, &mut tab_viewer);
         });
+    }
 
-        // --- CONNECTION SETTINGS POPUP ---
+    /// Renders the Connection Settings pop-up window.
+    /// Handles spawning the TCP client thread and establishing connections.
+    fn draw_connection_settings(&mut self, ctx: &egui::Context) {
         let mut is_connection_open = self.show_connection_settings;
         let mut request_conn_close = false;
         
@@ -242,14 +216,13 @@ impl eframe::App for MyApp {
                             self.tcp_listen_receiver = Some(tcp_listen_receiver);
 
                             let server_address_clone = self.server_address.clone();
-                            thread::spawn(move || {
+                            std::thread::spawn(move || {
                                     let mut tcp_client = TcpClient::new(
                                         format!("{}:6767",server_address_clone).parse().unwrap(),
                                         tcp_write_receiver,
                                         tcp_listen_sender,
                                     );
                                     tcp_client.start_tcp_client();
-
                             });
                             request_conn_close = true;
                         }
@@ -264,11 +237,13 @@ impl eframe::App for MyApp {
             is_connection_open = false;
         }
         self.show_connection_settings = is_connection_open;
+    }
 
-        // --- SESSION SETTINGS POPUP ---
+    /// Renders the Session Settings pop-up window.
+    /// Handles inputing credentials and initiating the login sequence.
+    fn draw_session_settings(&mut self, ctx: &egui::Context) {
         let mut is_session_open = self.show_session_settings;
         let mut request_close = false;
-        
         if is_session_open {
             egui::Window::new("Session Settings")
                 .open(&mut is_session_open) // Fügt das 'X' zum Schließen hinzu
@@ -280,11 +255,9 @@ impl eframe::App for MyApp {
                         .num_columns(2)
                         .show(ui, |ui| {
                             ui.label("Username ");
-                            if ui.text_edit_singleline(&mut self.draft_username).changed() {
-                                //TODO connect oder save button oder ausgrauen, solang sich nix ändert!
-                            }
+                            ui.text_edit_singleline(&mut self.draft_username);
                             ui.end_row(); // <-- Das hat gefehlt! Dadurch wird eine neue Zeile gestartet.
-                            
+
                             ui.label("Role");
                             egui::ComboBox::from_id_source("role_combo") // from_id_source statt from_label verhindert doppelte Labels im Grid
                                 .selected_text(match self.draft_role {
@@ -301,9 +274,7 @@ impl eframe::App for MyApp {
 
                             ui.label("Password");
                             let password_edit = egui::TextEdit::singleline(&mut self.password).password(true);
-                            if ui.add(password_edit).changed() {
-                                //TODO connect oder save button oder ausgrauen, solang sich nix ändert!
-                            }
+                            ui.add(password_edit);
                             ui.end_row();
                         });
                     ui.add_space(10.0);
@@ -318,8 +289,6 @@ impl eframe::App for MyApp {
                             request_close = true;
                         }
                         if ui.button("Login").clicked() {
-
-                            // Speichere die Änderungen aus den Entwurfs-Variablen in das eigentliche Profil
                             self.username = self.draft_username.clone();
                             self.role = self.draft_role.clone();
 
@@ -330,7 +299,7 @@ impl eframe::App for MyApp {
                             };
                             if let Err(e) = self.ui_event_sender.send(event) {
                                 eprintln!("Failed to send UiEvent: {}", e);
-                            }else{
+                            } else {
                                 request_close = true;
                             }
                             self.password.clear();
@@ -338,70 +307,46 @@ impl eframe::App for MyApp {
                     });
                 });
         }
-        
         if request_close {
             is_session_open = false;
         }
-
         self.show_session_settings = is_session_open;
+    }
 
-        // --- SETTINGS WINDOW ---
-        if self.show_settings_window {
-            //TODO: verschieben in eine eigene datei.
-            ctx.show_viewport_immediate(
-                egui::ViewportId::from_hash_of("settings_id"),
-                egui::ViewportBuilder::default()
-                    .with_title("Settings")
-                    .with_inner_size([450.0, 350.0]),
-                |ctx, _| {
-                    egui::CentralPanel::default().show(ctx, |ui| {
-                        egui::Grid::new("settings_grid")
-                            .num_columns(2)
-                            .show(ui, |ui| {
-                                ui.label("Name:");
-                                ui.text_edit_singleline(&mut self.username);
-                                ui.end_row();
+    /// Draws the bottom status bar, displaying connection state, user role, and software version.
+    fn draw_bottom_bar(&mut self, ctx: &egui::Context) {
+        egui::TopBottomPanel::bottom("bottom_bar").show(ctx, |ui| {
+            ui.horizontal(|ui| {
+                let status_color = match self.connection_state {
+                    ConnectionState::Disconnected | ConnectionState::Error => egui::Color32::RED,
+                    ConnectionState::ConnectionPending => egui::Color32::YELLOW,
+                    ConnectionState::Connected => {
+                        match self.session_state {
+                            SessionState::LoginFailed(_) => egui::Color32::YELLOW,
+                            SessionState::LoggedIn => egui::Color32::GREEN,
+                            SessionState::LoginPending | SessionState::LoggedOut => egui::Color32::YELLOW,
+                        }
+                    }
+                };
+                let (rect, _) = ui.allocate_exact_size(egui::vec2(8.0, 8.0), egui::Sense::hover());
+                ui.painter().circle_filled(rect.center(), 4.0, status_color);
+                if let SessionState::LoggedIn = self.session_state {
+                    ui.label(format!("{} | {}", self.username, self.role.to_string()));
+                } else {
+                    ui.label("Logged out");
+                }
 
-                                ui.label("Theme:");
-                                egui::ComboBox::from_id_source("theme_combo")
-                                    .selected_text(format!("{:?}", self.current_theme))
-                                    .show_ui(ui, |ui| {
-                                        if ui
-                                            .selectable_value(
-                                                &mut self.current_theme,
-                                                Theme::Dark,
-                                                "Dark",
-                                            )
-                                            .clicked()
-                                        {
-                                            ctx.set_visuals(egui::Visuals::dark());
-                                        }
-                                        if ui
-                                            .selectable_value(
-                                                &mut self.current_theme,
-                                                Theme::Light,
-                                                "Light",
-                                            )
-                                            .clicked()
-                                        {
-                                            ctx.set_visuals(egui::Visuals::light());
-                                        }
-                                    });
-                                ui.end_row();
-                            });
-                    });
-                },
-            );
-
-            if ctx.input(|i| i.viewport().close_requested()) {
-                //TODO: fenster schließt sich nicht. button funktioniert nicht!
-                self.show_settings_window = false;
-            }
-        }
+                // Rest rechtsbündig ausrichten
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.label(format!(
+                        "R.E.K.T.A.L. Version: {}",
+                        env!("CARGO_PKG_VERSION")
+                    ));
+                });
+            });
+        });
     }
 }
-
-// --- TAB VIEWER ---
 struct MyTabViewer;
 
 impl TabViewer for MyTabViewer {

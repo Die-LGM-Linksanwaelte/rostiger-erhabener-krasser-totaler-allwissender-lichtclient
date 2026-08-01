@@ -1,4 +1,5 @@
 use crate::network::connection_state::{ConnectionState, SessionState};
+use crate::network::udp_client::MAX_CHANNEL;
 use crate::panels::Tab;
 use common::networking::messages::{TcpClientMessage, TcpServerMessage};
 use egui_dock::DockState;
@@ -6,6 +7,18 @@ use std::sync::mpsc::{Receiver, Sender};
 use crate::panels::terminal::TextFragment;
 use eframe::egui::Color32;
 use common::logging::LogLevel;
+
+pub(crate) fn handle_dmx_data(dmx_receiver: &Receiver<(u8, [u8; MAX_CHANNEL])>, tree: &mut DockState<Tab>) {
+    while let Ok((universe_id, dmx_data)) = dmx_receiver.try_recv() {
+        for (_, tab) in tree.iter_all_tabs_mut() {
+            if let Tab::Universe(panel) = tab {
+                if panel.selected_universe - 1 == universe_id {
+                    panel.dmx_data.copy_from_slice(&dmx_data);
+                }
+            }
+        }
+    }
+}
 
 pub(crate) fn handle_incoming_network_data(tcp_receiver: &mut Option<Receiver<TcpServerMessage>>, tree: &mut DockState<Tab>, session_state: &mut SessionState) {
     if let Some(tcp_receiver) = tcp_receiver{
@@ -102,6 +115,9 @@ pub(crate) fn handle_events(
             UiEvent::SetConnectionState {
                 state,
             } => {
+                if state == ConnectionState::Disconnected || state == ConnectionState::Error {
+                    *session_state = SessionState::LoggedOut;
+                }
                 *connection_state = state;
             }
             UiEvent::LogoutRequest => {
