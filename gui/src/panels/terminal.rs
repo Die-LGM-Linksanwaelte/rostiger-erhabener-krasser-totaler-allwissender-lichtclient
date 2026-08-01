@@ -1,8 +1,9 @@
 use crate::controller::UiEvent;
+use crate::UI_EVENT_SENDER;
+use common::logging::LogLevel::*;
+use common::r_log;
 use eframe::egui;
 use eframe::egui::Color32;
-
-use crate::UI_EVENT_SENDER;
 
 /// A structure representing a single, colored piece of text.
 #[derive(Clone)]
@@ -26,7 +27,7 @@ pub struct TerminalPanel {
 
 impl TerminalPanel {
     /// Creates a new instance of the terminal panel.
-    pub fn new(tab_id: u32, ) -> Self {
+    pub fn new(tab_id: u32) -> Self {
         let initial_line = vec![
             TextFragment {
                 text: "> ".to_string(),
@@ -91,7 +92,6 @@ impl TerminalPanel {
                         .show(ui, |ui| {
                             ui.label("Command history lenght: ");
                             if ui.text_edit_singleline(&mut self.settings_text).changed() {
-                                // Nur positive Ganzzahlen zulassen (Ziffern)
                                 self.settings_text.retain(|c| c.is_ascii_digit());
                             }
                         });
@@ -120,11 +120,8 @@ impl TerminalPanel {
                 .stick_to_bottom(true)
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
-                    // Iteriere durch die Zeilen in der History
                     for line_fragments in &self.history {
-                        // Jede Zeile wird in einem horizontalen Layout dargestellt
                         ui.horizontal_wrapped(|ui| {
-                            // Iteriere durch die farbigen Fragmente in der Zeile
                             for fragment in line_fragments {
                                 ui.label(egui::RichText::new(&fragment.text).color(fragment.color));
                             }
@@ -149,7 +146,6 @@ impl TerminalPanel {
 
                     if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                         if !self.input_text.is_empty() {
-                            // Füge den eingegebenen Befehl als mehrfarbige Zeile zur History hinzu
                             self.add_fragments(vec![
                                 TextFragment {
                                     text: "> ".to_string(),
@@ -160,7 +156,7 @@ impl TerminalPanel {
                                     color: Color32::WHITE,
                                 },
                             ]);
-                            
+
                             self.command_history.push(self.input_text.clone());
                             self.position_in_history = 0; // Reset history position
 
@@ -169,7 +165,7 @@ impl TerminalPanel {
                                     id: self.tab_id,
                                     command: self.input_text.clone(),
                                 }) {
-                                    eprintln!("Failed to send UiEvent: {}", e);
+                                    r_log!(Error, "Failed to send UiEvent: {}", e);
                                 }
                             }
                             self.input_text.clear();

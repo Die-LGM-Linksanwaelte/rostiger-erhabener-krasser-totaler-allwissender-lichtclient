@@ -1,6 +1,9 @@
 use crate::network::connection_state::ConnectionState;
-use common::networking;
-use common::networking::messages::{HandshakeRequest, HandshakeResponse, TcpClientMessage, TcpServerMessage};
+use common::logging::LogLevel::{Error, Info, SuccessEvent};
+use common::networking::messages::{
+    HandshakeRequest, HandshakeResponse, TcpClientMessage, TcpServerMessage,
+};
+use common::{networking, r_log};
 use std::env;
 use std::io::{Read, Write};
 use std::net::{Shutdown, TcpStream};
@@ -27,21 +30,20 @@ impl TcpClient {
         }
     }
 
+    ///sets the connection state by sending it to the controller
     fn set_connection_state(state: ConnectionState) {
         if let Some(sender) = crate::UI_EVENT_SENDER.read().unwrap().as_ref() {
             let _ = sender.send(crate::controller::UiEvent::SetConnectionState { state });
         }
     }
-    pub(crate) fn start_tcp_client(&mut self) {
-        //TODO refractoring
-        println!("EDER stinkt!");
 
-        println!(
-            "[System] Trying to establish connection to {} ...",
+    ///initializes the tcp client and its read and write threads
+    pub(crate) fn start_tcp_client(&mut self) {
+        r_log!(
+            Info,
+            "Trying to establish connection to {} ...",
             self.target
         );
-
-
 
         let mut write_stream = match TcpStream::connect(&self.target) {
             Ok(stream) => stream,
@@ -62,21 +64,21 @@ impl TcpClient {
 
         Self::set_connection_state(ConnectionState::ConnectionPending);
 
-        write_stream
-            .write_all(&bincode::serialize(&req).unwrap())
-            .unwrap(); //TODO fehlerbehandlung
+        if let Err(e) = write_stream.write_all(&bincode::serialize(&req).unwrap()) {
+            r_log!(Error, "Error writing to TcpStream: {}", e);
+        }
 
         let mut buffer = [0; 1024];
 
         let bytes = match write_stream.read(&mut buffer) {
             Ok(0) => {
-                println!("\x1b[91m[Connection was terminated instantly\x1b[0m");
+                r_log!(Error, "Connection was terminated instantly");
                 Self::set_connection_state(ConnectionState::Disconnected);
                 return;
             }
             Ok(b) => b,
             Err(e) => {
-                println!("\x1b[91m[Read-Error: {}\x1b[0m", e);
+                r_log!(Error, "Read-Error: {}", e);
                 Self::set_connection_state(ConnectionState::Error);
                 return;
             }
@@ -85,41 +87,34 @@ impl TcpClient {
         let res = match bincode::deserialize::<HandshakeResponse>(&buffer[..bytes]) {
             Ok(res) => res,
             Err(e) => {
-                println!(
-                    "\n[System] Fehler beim Deserialisieren des Handshakes: {}",
-                    e
-                );
+                r_log!(Error, "Error deserializing HandshakeResponse: {}", e);
                 return;
             }
         };
 
         match res {
             HandshakeResponse::Ok => {
-                println!(
-                    "\x1b[32m[System] Version {} verifiziert!\x1b[0m",
-                    client_version
-                );
+                r_log!(SuccessEvent, "Version {} verified!", client_version);
                 Self::set_connection_state(ConnectionState::Connected);
             }
             HandshakeResponse::Mismatch { server_version } => {
-                // HIER IST DEINE ABSOLUT PERFEKTE FEHLERMELDUNG:
-                println!("\n\x1b[91m[CRITICAL ERROR] Protokoll-Abweichung erkannt!\x1b[0m");
-                println!(
-                    "\x1b[93mDer Kernel läuft auf Version: {}\x1b[0m",
+                r_log!(
+                    Error,
+                    "Version mismatch! this client has the version {}. Kernel has the version {}",
+                    client_version,
                     server_version
                 );
-                println!(
-                    "\x1b[93mDieser Client ist auf Version: {}\x1b[0m",
-                    client_version
-                );
-
                 std::process::exit(1);
             }
         }
 
-        let read_stream = write_stream
-            .try_clone()
-            .expect("Konnte Stream nicht klonen");
+        let read_stream = match write_stream.try_clone() {
+            Ok(stream) => stream,
+            Err(e) => {
+                r_log!(Error, "Failed to clone TcpStream: {}", e);
+                return;
+            }
+        };
 
         let tcp_sender = self.tcp_sender.clone();
 
@@ -130,34 +125,31 @@ impl TcpClient {
         Self::write_thread(self, write_stream);
     }
 
+    ///runs the listen thread that receives the tcp messages from the kernel and sends it to the controller
     fn listen_tcp(mut read_stream: TcpStream, tcp_sender: Sender<TcpServerMessage>) {
         let mut response_buffer = [0; 4096]; // Etwas größerer Buffer schadet nie
 
         loop {
             match read_stream.read(&mut response_buffer) {
                 Ok(0) => {
-                    println!("\n[System] Server hat die Verbindung geschlossen.");
+                    r_log!(Error, "Connection was terminated");
                     Self::set_connection_state(ConnectionState::Disconnected);
                     break;
                 }
                 Ok(bytes_read) => {
                     match bincode::deserialize::<TcpServerMessage>(&response_buffer[..bytes_read]) {
                         Ok(kernel_msg) => {
-                            // Einfach an den Main-Thread (MyApp) weiterleiten!
                             if let Err(e) = tcp_sender.send(kernel_msg) {
-                                eprintln!("Fehler beim Weiterleiten der Netzwerk-Nachricht an die GUI: {}", e);
+                                r_log!(Error, "Error sending TcpServerMessage: {}", e);
                             }
                         }
                         Err(e) => {
-                            println!(
-                                "\n[System] Fehler beim Deserialisieren der Serverantwort: {}",
-                                e
-                            );
+                            r_log!(Error, "Error deserializing TcpServerMessage: {}", e);
                         }
                     }
                 }
                 Err(e) => {
-                    println!("\n[System] Fehler beim Lesen vom Server-Socket: {}", e);
+                    r_log!(Error, "Error reading from TcpStream: {}", e);
                     Self::set_connection_state(ConnectionState::Error);
                     break;
                 }
@@ -165,18 +157,23 @@ impl TcpClient {
         }
     }
 
+    ///runs the write thread, that receives the messages from the ui and sends it via tcp to the socket
     fn write_thread(&self, mut write_stream: TcpStream) {
         while let Ok(message) = self.tcp_receiver.recv() {
             match bincode::serialize(&message) {
                 Ok(serialized_response) => {
                     if let Err(e) = write_stream.write_all(&serialized_response) {
-                        eprintln!("[Conn] Got error while sending to Server: {} Stopped write-Thread", e);
+                        r_log!(
+                            Error,
+                            "Got error while sending to Server: {} Stopped write-Thread",
+                            e
+                        );
                         break;
                     }
                 }
 
                 Err(e) => {
-                    eprintln!("[Conn] Got error while serializing response: {}", e);
+                    r_log!(Error, "Got error while serializing response: {}", e);
                     break;
                 }
             }

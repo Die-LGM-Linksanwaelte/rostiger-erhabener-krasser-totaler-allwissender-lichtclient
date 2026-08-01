@@ -1,32 +1,38 @@
+use common::logging::LogLevel::*;
+use common::logging::{FileSink, Logger, TerminalSink};
+use common::networking::messages::UserRole;
 use common::networking::messages::{TcpClientMessage, TcpServerMessage};
+use common::r_log;
 use eframe::egui;
 use egui_dock::{DockArea, DockState, TabViewer};
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{mpsc, LazyLock, RwLock};
-use common::networking::messages::UserRole;
 
 mod controller;
 mod network;
 mod panels;
 
+use crate::controller::UiEvent;
 use crate::network::udp_client;
 use crate::network::udp_client::MAX_CHANNEL;
+use network::connection_state::{ConnectionState, SessionState};
 use network::tcp_client::TcpClient;
 use panels::Tab;
-use crate::controller::UiEvent;
-use network::connection_state::{ConnectionState, SessionState};
 
-pub static UI_EVENT_SENDER: LazyLock<RwLock<Option<Sender<UiEvent>>>> = LazyLock::new(||{
-    RwLock::new(None)
-});
+pub static UI_EVENT_SENDER: LazyLock<RwLock<Option<Sender<UiEvent>>>> =
+    LazyLock::new(|| RwLock::new(None));
 
 fn main() -> eframe::Result<()> {
+    Logger::global().add_sink(Box::new(FileSink::new("/tmp/rektal_gui.log")));
+    Logger::global().add_sink(Box::new(TerminalSink { cli_prompt: None }));
+
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([1024.0, 768.0])
             .with_title("R.E.K.T.A.L."),
         ..Default::default()
     };
+    r_log!(Info, "eframe initialized");
 
     eframe::run_native(
         "Docking App",
@@ -74,7 +80,6 @@ pub struct MyApp {
     draft_role: UserRole,
 }
 
-
 impl MyApp {
     /// Creates a new instance of the application with default settings.
     /// Also initializes the UDP listener for DMX data and sets up the primary communication channels.
@@ -82,18 +87,17 @@ impl MyApp {
         let (dmx_sender, dmx_receiver) = mpsc::channel();
 
         let (ui_event_sender, ui_event_receiver) = mpsc::channel();
-        
+
         *UI_EVENT_SENDER.write().unwrap() = Some(ui_event_sender.clone());
 
-        // Übergibt den Context direkt an den Listener
-        udp_client::start_udp_listener(None, dmx_sender, ctx)
-            .expect("Failed to start UDP listener");
+        if let Err(e) = udp_client::start_udp_listener(None, dmx_sender, ctx) {
+            r_log!(Error, "Failed to start UDP listener: {}", e);
+        }
 
-        // Erstelle eine neue TerminalPanel-Instanz für den initialen Tab
         let initial_terminal_panel = panels::terminal::TerminalPanel::new(0);
 
         Self {
-            tree: DockState::new(vec![Tab::Terminal(initial_terminal_panel)]), // Hier die Instanz verwenden
+            tree: DockState::new(vec![Tab::Terminal(initial_terminal_panel)]),
             show_session_settings: false,
             show_connection_settings: false,
             server_address: "127.0.0.1".to_string(),
@@ -117,8 +121,17 @@ impl MyApp {
 impl eframe::App for MyApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         controller::handle_dmx_data(&self.dmx_receiver, &mut self.tree);
-        controller::handle_incoming_network_data(&mut self.tcp_listen_receiver, &mut self.tree, &mut self.session_state);
-        controller::handle_events(&self.ui_event_receiver, &self.tcp_write_sender, &mut self.connection_state, &mut self.session_state);
+        controller::handle_incoming_network_data(
+            &mut self.tcp_listen_receiver,
+            &mut self.tree,
+            &mut self.session_state,
+        );
+        controller::handle_events(
+            &self.ui_event_receiver,
+            &self.tcp_write_sender,
+            &mut self.connection_state,
+            &mut self.session_state,
+        );
 
         self.draw_top_bar(ctx);
         self.draw_bottom_bar(ctx);
@@ -138,26 +151,31 @@ impl MyApp {
                         self.show_connection_settings = true;
                         ui.close_menu();
                     }
-                    if ui.add_enabled(
-                        matches!(self.connection_state, ConnectionState::Connected),
-                        egui::Button::new("Session Settings")
-                    ).clicked() {
+                    if ui
+                        .add_enabled(
+                            matches!(self.connection_state, ConnectionState::Connected),
+                            egui::Button::new("Session Settings"),
+                        )
+                        .clicked()
+                    {
                         self.show_session_settings = true;
                         self.draft_username = self.username.clone();
                         self.draft_role = self.role.clone();
                         self.password.clear(); // just to be safe
                         ui.close_menu();
                     }
-                    if ui.add_enabled(
-                        matches!(self.session_state, SessionState::LoggedIn),
-                        egui::Button::new("Logout")
-                    ).clicked() {
+                    if ui
+                        .add_enabled(
+                            matches!(self.session_state, SessionState::LoggedIn),
+                            egui::Button::new("Logout"),
+                        )
+                        .clicked()
+                    {
                         let event = UiEvent::LogoutRequest;
                         if let Err(e) = self.ui_event_sender.send(event) {
-                            eprintln!("Failed to send UiEvent: {}", e);
+                            r_log!(Error, "Failed to send UiEvent: {}", e);
                         }
                     }
-
                 });
 
                 ui.menu_button("Window", |ui| {
@@ -191,7 +209,7 @@ impl MyApp {
     fn draw_connection_settings(&mut self, ctx: &egui::Context) {
         let mut is_connection_open = self.show_connection_settings;
         let mut request_conn_close = false;
-        
+
         if is_connection_open {
             egui::Window::new("Connection Settings")
                 .open(&mut is_connection_open)
@@ -203,11 +221,10 @@ impl MyApp {
                         .num_columns(2)
                         .show(ui, |ui| {
                             ui.label("Server adress ");
-                            if ui.text_edit_singleline(&mut self.server_address).changed() {
-                            }
+                            if ui.text_edit_singleline(&mut self.server_address).changed() {}
                         });
                     ui.add_space(10.0);
-                    
+
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::TOP), |ui| {
                         if ui.button("Connect").clicked() {
                             let (tcp_write_sender, tcp_write_receiver) = mpsc::channel();
@@ -217,12 +234,12 @@ impl MyApp {
 
                             let server_address_clone = self.server_address.clone();
                             std::thread::spawn(move || {
-                                    let mut tcp_client = TcpClient::new(
-                                        format!("{}:6767",server_address_clone).parse().unwrap(),
-                                        tcp_write_receiver,
-                                        tcp_listen_sender,
-                                    );
-                                    tcp_client.start_tcp_client();
+                                let mut tcp_client = TcpClient::new(
+                                    format!("{}:6767", server_address_clone).parse().unwrap(),
+                                    tcp_write_receiver,
+                                    tcp_listen_sender,
+                                );
+                                tcp_client.start_tcp_client();
                             });
                             request_conn_close = true;
                         }
@@ -232,7 +249,7 @@ impl MyApp {
                     });
                 });
         }
-        
+
         if request_conn_close {
             is_connection_open = false;
         }
@@ -240,7 +257,7 @@ impl MyApp {
     }
 
     /// Renders the Session Settings pop-up window.
-    /// Handles inputing credentials and initiating the login sequence.
+    /// Handles inputting credentials and initiating the login sequence.
     fn draw_session_settings(&mut self, ctx: &egui::Context) {
         let mut is_session_open = self.show_session_settings;
         let mut request_close = false;
@@ -266,21 +283,37 @@ impl MyApp {
                                     UserRole::Showrunner => "Showrunner",
                                 })
                                 .show_ui(ui, |ui| {
-                                    ui.selectable_value(&mut self.draft_role, UserRole::Programmer, "Programmer");
-                                    ui.selectable_value(&mut self.draft_role, UserRole::BlindProgrammer, "Programmer Blind");
-                                    ui.selectable_value(&mut self.draft_role, UserRole::Showrunner, "Showrunner");
+                                    ui.selectable_value(
+                                        &mut self.draft_role,
+                                        UserRole::Programmer,
+                                        "Programmer",
+                                    );
+                                    ui.selectable_value(
+                                        &mut self.draft_role,
+                                        UserRole::BlindProgrammer,
+                                        "Programmer Blind",
+                                    );
+                                    ui.selectable_value(
+                                        &mut self.draft_role,
+                                        UserRole::Showrunner,
+                                        "Showrunner",
+                                    );
                                 });
                             ui.end_row();
 
                             ui.label("Password");
-                            let password_edit = egui::TextEdit::singleline(&mut self.password).password(true);
+                            let password_edit =
+                                egui::TextEdit::singleline(&mut self.password).password(true);
                             ui.add(password_edit);
                             ui.end_row();
                         });
                     ui.add_space(10.0);
 
                     if let SessionState::LoginFailed(ref reason) = self.session_state {
-                        ui.label(egui::RichText::new(format!("Login fehlgeschlagen: {}", reason)).color(egui::Color32::RED));
+                        ui.label(
+                            egui::RichText::new(format!("Login fehlgeschlagen: {}", reason))
+                                .color(egui::Color32::RED),
+                        );
                         ui.add_space(10.0);
                     }
 
@@ -298,7 +331,7 @@ impl MyApp {
                                 user_role: self.role.clone(),
                             };
                             if let Err(e) = self.ui_event_sender.send(event) {
-                                eprintln!("Failed to send UiEvent: {}", e);
+                                r_log!(Error, "Failed to send UiEvent: {}", e);
                             } else {
                                 request_close = true;
                             }
@@ -320,13 +353,13 @@ impl MyApp {
                 let status_color = match self.connection_state {
                     ConnectionState::Disconnected | ConnectionState::Error => egui::Color32::RED,
                     ConnectionState::ConnectionPending => egui::Color32::YELLOW,
-                    ConnectionState::Connected => {
-                        match self.session_state {
-                            SessionState::LoginFailed(_) => egui::Color32::YELLOW,
-                            SessionState::LoggedIn => egui::Color32::GREEN,
-                            SessionState::LoginPending | SessionState::LoggedOut => egui::Color32::YELLOW,
+                    ConnectionState::Connected => match self.session_state {
+                        SessionState::LoginFailed(_) => egui::Color32::YELLOW,
+                        SessionState::LoggedIn => egui::Color32::GREEN,
+                        SessionState::LoginPending | SessionState::LoggedOut => {
+                            egui::Color32::YELLOW
                         }
-                    }
+                    },
                 };
                 let (rect, _) = ui.allocate_exact_size(egui::vec2(8.0, 8.0), egui::Sense::hover());
                 ui.painter().circle_filled(rect.center(), 4.0, status_color);

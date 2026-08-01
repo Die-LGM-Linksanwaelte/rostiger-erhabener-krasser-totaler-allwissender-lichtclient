@@ -1,3 +1,4 @@
+///enum to describe the connection state of the user
 #[derive(PartialEq, Debug, Clone)]
 pub enum ConnectionState {
     Connected,
@@ -6,6 +7,7 @@ pub enum ConnectionState {
     ConnectionPending,
 }
 
+///enum to describe the session state of the user
 #[derive(PartialEq, Debug, Clone)]
 pub enum SessionState {
     LoginPending,
