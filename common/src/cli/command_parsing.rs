@@ -326,8 +326,25 @@ fn parse_cli_value(input: &str) -> Result<ChannelValue,String> {
             Err(_) => Err(format!("Invalid percantage format {}", percent_string)),
         }
     } else if let Some(hex_str) = input_str.strip_prefix("#") {
-        ChannelValue::from_str_radix(hex_str, 16)
-            .map_err(|_| format!("Invalid hex format {}", hex_str))
+        let hex_len = hex_str.len();
+
+        match ChannelValue::from_str_radix(hex_str, 16) {
+            Ok(val) => {
+                let scaled_val = match hex_len {
+                    2 => val * 0x01010101,
+                    4 => val * 0x00010001,
+                    6 => val << 8,
+                    8 => val,
+                    _ => return Err(format!(
+                        "Unsupported hex length: {}. Valid lengths are 2, 4, 6, or 8 digits (excluding '_').",
+                        hex_len
+                    )),
+                };
+                Ok(scaled_val)
+            }
+
+            Err(_) => Err(format!("Invalid hex format {}", hex_str))
+        }
     } else {
         input_str.parse::<ChannelValue>()
             .map_err(|_| format!("Invalid value {}. ", input_str))
