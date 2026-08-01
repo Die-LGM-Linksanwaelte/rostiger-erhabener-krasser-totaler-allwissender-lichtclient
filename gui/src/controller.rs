@@ -5,29 +5,22 @@ use egui_dock::DockState;
 use std::sync::mpsc::{Receiver, Sender};
 use crate::panels::terminal::TextFragment;
 use eframe::egui::Color32;
+use common::logging::LogLevel;
 
 pub(crate) fn handle_incoming_network_data(tcp_receiver: &mut Option<Receiver<TcpServerMessage>>, tree: &mut DockState<Tab>, session_state: &mut SessionState) {
     if let Some(tcp_receiver) = tcp_receiver{
         while let Ok(msg) = tcp_receiver.try_recv() {
             match msg {
-                TcpServerMessage::CommandOutput { answer, terminal_id } => {
+                TcpServerMessage::CommandOutput { answer, response_id } => {
                     for (_, tab) in tree.iter_all_tabs_mut() {
                         if let Tab::Terminal(panel) = tab {
-                            if panel.tab_id == terminal_id {
-                                match answer {
-                                    Ok(ref response) => {
-                                        panel.add_fragments(vec![TextFragment {
-                                            text: format!("[Server]: {}", response),
-                                            color: Color32::LIGHT_GRAY,
-                                        }]);
-                                    }
-                                    Err(ref e) => {
-                                        panel.add_fragments(vec![TextFragment {
-                                            text: format!("[Server Error]: {}", e),
-                                            color: Color32::RED,
-                                        }]);
-                                    }
-                                }
+                            if panel.tab_id == response_id {
+                                let (log_level, ref answer_string) = answer;
+                                panel.add_fragments(vec![TextFragment {
+                                    text: format!("[{}]: {}",log_level, answer_string),
+                                    color: log_level_to_color32(log_level),
+                                }]);
+
                             }
                         }
                     }
@@ -43,6 +36,17 @@ pub(crate) fn handle_incoming_network_data(tcp_receiver: &mut Option<Receiver<Tc
                 _ => {}
             }
         }
+    }
+}
+
+pub fn log_level_to_color32(level: LogLevel) -> Color32 {
+    match level {
+        LogLevel::SuccessEvent => Color32::GREEN,
+        LogLevel::Info => Color32::BLUE,
+        LogLevel::Warning => Color32::YELLOW,
+        LogLevel::Error => Color32::RED,
+        LogLevel::UserError => Color32::LIGHT_RED,
+        LogLevel::UserSuccess => Color32::LIGHT_GREEN,
     }
 }
 
@@ -68,7 +72,7 @@ pub(crate) fn handle_events(
         match event {
             UiEvent::SendTerminalCommand { id, command } => {
                 let msg = TcpClientMessage::ExecuteCommand {
-                    terminal_id: id,
+                    response_id: id,
                     command,
                 };
                 if let Some(tcp_sender) = tcp_sender {
