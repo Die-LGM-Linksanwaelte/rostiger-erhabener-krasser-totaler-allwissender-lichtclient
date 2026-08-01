@@ -5,11 +5,10 @@ use std::time::Duration;
 use common::logging::{Logger, TerminalSink, FileSink};
 use common::logging::LogLevel::*;
 use common::r_log;
-use crate::commandline::parse_command;
+use common::cli::command_parsing::run_command;
 
-mod commandline;
 
-/// Spawns the ['dmx_output_loop']-thread and than starts the main REPL.
+/// Spawns the ['dmx_output_loop']-thread and then starts the main REPL.
 fn main() -> io::Result<()> {
 
     if cfg!(all(debug_assertions, not(test))) {
@@ -19,14 +18,12 @@ fn main() -> io::Result<()> {
     Logger::global().add_sink(Box::new(TerminalSink {cli_prompt: Some("> ".into())}));
     Logger::global().add_sink(Box::new(FileSink::new("kernel.log")));
 
-    let _artnet_handle = std::thread::spawn(|| {
+    let _artnet_handle = thread::spawn(|| {
         dmx_output_loop().expect("\x1b[31martnet loop failed\x1b[0m");
     });
 
 
-    common::networking::server_sockets::activate_socket(6767, |cmd| {
-        parse_command(cmd)
-    });
+    common::networking::server_sockets::activate_socket(6767);
 
 
     loop {
@@ -39,15 +36,9 @@ fn main() -> io::Result<()> {
 
         let input = input.trim().to_string();
 
-        match parse_command(input) {
-            Ok(output) => {
-                r_log!(UserSuccess, "{}", output);
-            },
+        let response = run_command(input);
 
-            Err(output) => {
-                r_log!(UserError,"{}", output);
-            }
-        }
+        r_log!(response.0, "{}", response.1);
     }
 
     _artnet_handle.join().unwrap();

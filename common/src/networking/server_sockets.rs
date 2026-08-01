@@ -5,13 +5,13 @@ use std::sync::atomic::Ordering;
 use std::sync::mpsc;
 use std::sync::mpsc::{Receiver,Sender};
 use rand::{RngExt};
+use crate::cli::command_parsing::run_command;
 use crate::logging::LogLevel::*;
 use crate::networking::connection_engine::{ClientSession, ConnectionID, SessionID, NEXT_CONNECTION_ID, SERVER_STATE};
 use crate::networking::messages::{HandshakeRequest, HandshakeResponse, SubscribeTopic, TcpClientMessage, TcpServerMessage, UpdateMode};
 use crate::networking::messages::TcpServerMessage::{CommandOutput, LogoutOk};
 
-pub fn activate_socket<F>(port: u16, command_handler: F)
-where F : Fn(String) -> Result<String, String> + Send + Sync + 'static + Clone {
+pub fn activate_socket(port: u16) {
     let address = format!("0.0.0.0:{}", port);
     let listener = match TcpListener::bind(&address) {
         Ok(l) => l,
@@ -33,10 +33,8 @@ where F : Fn(String) -> Result<String, String> + Send + Sync + 'static + Clone {
                     r_log!(SuccessEvent,"[Conn {}] New client connected: {}",
                         connection_id, stream.peer_addr().unwrap());
 
-                    let handler_clone = command_handler.clone();
-
                     thread::spawn(move || {
-                        handle_client(stream, handler_clone, connection_id);
+                        handle_client(stream, connection_id);
                     });
                 }
                 Err(e) => {
@@ -47,10 +45,7 @@ where F : Fn(String) -> Result<String, String> + Send + Sync + 'static + Clone {
     });
 }
 
-fn handle_client<F>(mut stream: TcpStream, command_handler: F, connection_id: ConnectionID)
-where
-    F : Fn(String) -> Result<String, String> + Send + Sync + 'static + Clone
-{
+fn handle_client(mut stream: TcpStream, connection_id: ConnectionID) {
 
     match check_version_compatibility(&mut stream) {
         Err(HandshakeError::InvalidData(e)) => {
@@ -77,7 +72,7 @@ where
     });
 
 
-    read_thread(&mut stream, command_handler, connection_id, &tx_channel);
+    read_thread(&mut stream, connection_id, &tx_channel);
 
 }
 
@@ -136,10 +131,7 @@ fn check_version_compatibility(stream: &mut TcpStream) -> Result<(), HandshakeEr
 
 }
 
-fn read_thread<F>(stream: &mut TcpStream, command_handler: F, connection_id: ConnectionID, tx_channel: &Sender<TcpServerMessage>)
-where
-    F: Fn(String) -> Result<String, String> + Send + Sync + 'static + Clone
-{
+fn read_thread(stream: &mut TcpStream, connection_id: ConnectionID, tx_channel: &Sender<TcpServerMessage>) {
     let mut buffer = [0; 1024];
     let mut token: Option<SessionID> = None;
 
@@ -176,7 +168,7 @@ where
             TcpClientMessage::Logout => { unreachable!() },
 
             _ => {
-                if let Some(response) = handle_messages(msg, command_handler.clone(), connection_id) {
+                if let Some(response) = handle_messages(msg, connection_id) {
                     if let Err(e) = tx_channel.send(response) {
                         r_log!(Error,"[Conn {}] Got error while sending response to channel: {}", connection_id, e);
                     }
@@ -340,8 +332,7 @@ fn update_login_status(
     new_token
 }
 
-fn handle_messages<F>(msg: TcpClientMessage, command_handler: F, connection_id: ConnectionID) -> Option<TcpServerMessage>
-where F : Fn(String) -> Result<String, String> + Send + Sync + 'static + Clone {
+fn handle_messages(msg: TcpClientMessage, connection_id: ConnectionID) -> Option<TcpServerMessage> {
     match msg {
         TcpClientMessage::Login {..} | TcpClientMessage::Logout | TcpClientMessage::Relogin {..} => unreachable!(),
 
@@ -366,19 +357,21 @@ where F : Fn(String) -> Result<String, String> + Send + Sync + 'static + Clone {
             None
         }
 
-        TcpClientMessage::ExecuteCommand{ command, terminal_id} => {
-            let response = command_handler(command);
-            match response.clone() {
-                Ok(response_ok) => {
-                    r_log!(UserSuccess,"[Conn {}] {}", connection_id, response_ok);
-                }
-                Err(response_error) => {
-                    r_log!(UserError,"[Conn {}] {}", connection_id, response_error);
-                }
-            }
+        TcpClientMessage::ExecuteCommand{ command, response_id} => {
+            let answer = run_command(command);
+            r_log!(answer.0, "{}", answer.1);
             Some(CommandOutput{
-                answer: response,
-                terminal_id
+                answer,
+                response_id
+            })
+        }
+        
+        TcpClientMessage::ExecuteImplicitCommand { command, response_id} => {
+            let answer = command.execute();
+            r_log!(answer.0, "{}", answer.1);
+            Some(CommandOutput {
+                answer,
+                response_id
             })
         }
 
