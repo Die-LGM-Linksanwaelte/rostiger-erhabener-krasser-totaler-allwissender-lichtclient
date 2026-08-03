@@ -7,4 +7,5 @@ members = [
     "rektal",
     "kernel",
     "interface",
-    "common"]
+    "common",
+    "launcher"]
