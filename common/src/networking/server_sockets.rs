@@ -91,15 +91,27 @@ enum HandshakeError {
 }
 
 fn check_version_compatibility(stream: &mut TcpStream) -> Result<(), HandshakeError> {
-    let mut buffer = [0; 1024];
-
-    let bytes = match stream.read(&mut buffer) {
-        Ok(0) => return Err(HandshakeError::InvalidData("Connection was terminated instantly".into())),
-        Ok(b) => b,
-        Err(e) => return Err(HandshakeError::InvalidData(format!("Read-Error: {}", e)))
+    let mut len_buffer = [0u8; 4];
+    let mut buffer = match stream.read_exact(&mut len_buffer) {
+        Ok(_) => {
+            let msg_len = u32::from_be_bytes(len_buffer) as usize;
+            vec![0u8; msg_len]
+        },
+        Err(e) => {
+            r_log!(Error, "[Handshake] Len-Read-Stream-Error: {}", e);
+            return Err(HandshakeError::InvalidData("Read_stream corrupt".to_owned()));
+        }
     };
 
-    match bincode::deserialize::<HandshakeRequest>(&buffer[..bytes]) {
+    let mut bytes = match stream.read_exact(&mut buffer) {
+        Err(e) => {
+            r_log!(Error,"[Handshake] Connection error : {}", e);
+            return Err(HandshakeError::InvalidData("read_stream corrupt".to_owned()));
+        }
+        Ok(_) => buffer
+    };
+
+    match bincode::deserialize::<HandshakeRequest>(&bytes) {
         Ok(request) => {
             if request.magic_string != "REKTAL" {
                 return Err(HandshakeError::InvalidData("Wrong magic string. Client is not an Rektal-Client".into()));
@@ -113,7 +125,11 @@ fn check_version_compatibility(stream: &mut TcpStream) -> Result<(), HandshakeEr
                     server_version: server_version.clone(),
                 };
 
-                let _ = stream.write(&bincode::serialize(&response).unwrap());
+                let payload = bincode::serialize(&response).unwrap();
+                let len = payload.len() as u32;
+
+                stream.write_all(&len.to_be_bytes()).unwrap();
+                stream.write_all(&payload).unwrap();
 
                 Err(HandshakeError::VersionMismatch {
                     server_version,
@@ -121,7 +137,10 @@ fn check_version_compatibility(stream: &mut TcpStream) -> Result<(), HandshakeEr
                 })
             } else {
                 let response = HandshakeResponse::Ok;
-                let _ = stream.write(&bincode::serialize(&response).unwrap());
+                let payload = bincode::serialize(&response).unwrap();
+                let len = payload.len() as u32;
+                stream.write_all(&len.to_be_bytes()).unwrap();
+                stream.write_all(&payload).unwrap();
 
                 Ok(())
             }
@@ -133,23 +152,30 @@ fn check_version_compatibility(stream: &mut TcpStream) -> Result<(), HandshakeEr
 }
 
 fn read_thread(stream: &mut TcpStream, connection_id: ConnectionID, tx_channel: &Sender<TcpServerMessage>) {
-    let mut buffer = [0; 1024];
+    let mut len_buffer = [0u8; 4];
     let mut token: Option<SessionID> = None;
 
     loop {
-        let bytes = match stream.read(&mut buffer) {
-            Ok(0) => {
-                r_log!(SuccessEvent,"[Conn {}] Client disconnected successfully", connection_id);
-                break;
-            }
+        let mut buffer = match stream.read_exact(&mut len_buffer) {
+            Ok(_) => {
+                let msg_len = u32::from_be_bytes(len_buffer) as usize;
+                vec![0u8; msg_len]
+            },
             Err(e) => {
-                r_log!(Warning,"[Conn {}] Connection error : {}", connection_id, e);
+                r_log!(Error, "[Conn {}] Length of read-stream-error: {}", connection_id, e);
                 break;
             }
-            Ok(bytes) => bytes
         };
 
-        let msg = bincode::deserialize::<TcpClientMessage>(&buffer[..bytes]).unwrap();
+        let bytes = match stream.read_exact(&mut buffer) {
+            Err(e) => {
+                r_log!(Error,"[Conn {}] Connection error : {}", connection_id, e);
+                break;
+            }
+            Ok(_) => buffer
+        };
+
+        let msg = bincode::deserialize::<TcpClientMessage>(&bytes).unwrap();
         r_log!(Info,"[Conn {}] Received Enum: {:?}", connection_id, msg);
 
         token = update_login_status(&msg, token, &tx_channel, connection_id);
@@ -207,6 +233,14 @@ fn write_thread(rx_channel: Receiver<TcpServerMessage>, mut write_stream: TcpStr
     while let Ok(message) = rx_channel.recv() {
         match bincode::serialize(&message) {
             Ok(serialized_response) => {
+                let len = serialized_response.len() as u32;
+
+                if let Err(e) = write_stream.write_all(&len.to_be_bytes()) {
+                    r_log!(Warning,"[Conn {}] Got error while sending len to Client: {} Stopped write-Thread",
+                             connection_id, e);
+                    break;
+                }
+
                 if let Err(e) = write_stream.write_all(&serialized_response) {
                     r_log!(Warning,"[Conn {}] Got error while sending to Client: {} Stopped write-Thread",
                              connection_id, e);
@@ -365,7 +399,7 @@ fn handle_messages(msg: TcpClientMessage, connection_id: ConnectionID, token: Se
                 response_id
             })
         }
-        
+
         TcpClientMessage::ExecuteImplicitCommand { command, response_id} => {
             let answer = command.execute();
             r_log!(answer.0, "{}", answer.1);

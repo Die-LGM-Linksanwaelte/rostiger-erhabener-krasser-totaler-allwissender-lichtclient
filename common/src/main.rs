@@ -4,6 +4,7 @@ use std::thread;
 use std::env;
 use common::networking::messages::{TcpClientMessage, TcpServerMessage, UserRole, HandshakeRequest, HandshakeResponse};
 use common::networking::{SubscribeTopic, UpdateMode};
+use common::r_log;
 
 ///startPoint - This is the main entry point of the common application.
 fn main() {
@@ -31,23 +32,35 @@ fn main() {
         client_version: client_version.into(),
     };
 
-    write_stream.write_all(&bincode::serialize(&req).unwrap()).unwrap();
+    let payload = bincode::serialize(&req).unwrap();
+    let len = payload.len() as u32;
 
-    let mut buffer = [0; 1024];
+    write_stream.write_all(&len.to_be_bytes()).unwrap();
+    write_stream.write_all(&payload).unwrap();
 
-    let bytes = match write_stream.read(&mut buffer) {
-        Ok(0) => {
-            println!("\x1b[91m[Connection was terminated instantly\x1b[0m");
-            return;
-        }
-        Ok(b) => b,
+    let mut len_buffer = [0u8; 4];
+
+
+    let mut buffer = match write_stream.read_exact(&mut len_buffer) {
+        Ok(_) => {
+            let msg_len = u32::from_be_bytes(len_buffer) as usize;
+            vec![0u8; msg_len]
+        },
         Err(e) => {
-            println!("\x1b[91m[Read-Error: {}\x1b[0m", e);
+            println!("In Establishing: Length of read-stream-error: {}", e);
             return;
         }
     };
 
-    let res = match bincode::deserialize::<HandshakeResponse>(&buffer[..bytes]) {
+    let bytes = match write_stream.read_exact(&mut buffer) {
+        Err(e) => {
+            println!("In Establishing: Connection error : {}", e);
+            return;
+        }
+        Ok(_) => buffer
+    };
+
+    let res = match bincode::deserialize::<HandshakeResponse>(&bytes) {
         Ok(res) => res,
         Err(e) => {
             println!("\n[System] Fehler beim Deserialisieren des Handshakes: {}", e);
@@ -85,17 +98,26 @@ fn main() {
     // LESE-THREAD (Hintergrund)
     // ---------------------------------------------------------
     thread::spawn(move || {
-        let mut response_buffer = [0; 4096]; // Etwas größerer Buffer schadet nie
-
         loop {
-            match read_stream.read(&mut response_buffer) {
-                Ok(0) => {
-                    println!("\n[System] Server hat die Verbindung geschlossen.");
-                    // Beendet das gesamte Programm, wenn der Server weg ist
-                    std::process::exit(0);
+            let mut len_buffer = [0u8; 4];
+            let mut buffer = match read_stream.read_exact(&mut len_buffer) {
+                Ok(_) => {
+                    let msg_len = u32::from_be_bytes(len_buffer) as usize;
+                    vec![0u8; msg_len]
+                },
+                Err(e) => {
+                    println!("[Read-stream] Len-Error: {}", e);
+                    break;
                 }
-                Ok(bytes_read) => {
-                    match bincode::deserialize::<TcpServerMessage>(&response_buffer[..bytes_read]) {
+            };
+
+            match read_stream.read_exact(&mut buffer) {
+                Err(e) => {
+                    println!("[Read-Stream] Connection error : {}", e);
+                    break;
+                }
+                Ok(_) => {
+                    match bincode::deserialize::<TcpServerMessage>(&buffer) {
                         Ok(kernel_msg) => {
                             // Wir machen einen Zeilenumbruch vorher, damit das "> " vom Prompt nicht zerrissen wird
                             print!("\r\x1b[2K"); // Löscht die aktuelle Eingabezeile kurz für sauberen Output
@@ -137,10 +159,6 @@ fn main() {
                             println!("\n[System] Fehler beim Deserialisieren der Serverantwort: {}", e);
                         }
                     }
-                }
-                Err(e) => {
-                    println!("\n[System] Fehler beim Lesen vom Server-Socket: {}", e);
-                    std::process::exit(1);
                 }
             }
         }
@@ -223,6 +241,13 @@ fn main() {
         }
 
         let bytes = bincode::serialize(&msg).unwrap();
+        let bytes_len = bytes.len() as u32;
+
+        if write_stream.write_all(&bytes_len.to_be_bytes()).is_err() {
+            println!("[System] Konnte len nicht senden. Verbindung tot?");
+            break;
+        }
+
         if write_stream.write_all(&bytes).is_err() {
             println!("[System] Konnte nicht senden. Verbindung tot?");
             break;
