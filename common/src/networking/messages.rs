@@ -111,7 +111,7 @@ pub enum EditableResource {
 
 //This is only Temporarily here, will be moved to a different location once this location is programmed
 //Also, Interface may not belong here, that's why ist commented out, since it should be handled differently than the GUIs
-#[derive(Serialize, Deserialize, Debug, Copy, Clone)]
+#[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq)]
 pub enum UserRole {
     Programmer,
     BlindProgrammer,

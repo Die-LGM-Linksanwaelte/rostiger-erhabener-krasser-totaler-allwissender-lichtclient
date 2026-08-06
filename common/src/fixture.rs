@@ -12,7 +12,7 @@ use std::collections::{HashMap};
 use std::fmt::{Display};
 use std::sync::{LazyLock, RwLock};
 use serde::{Deserialize, Serialize};
-use crate::fixture::channel::{Channel, ChannelReservation, SimplePropertyType};
+use crate::fixture::channel::{send_dmx_config_update, Channel, ChannelReservation, SimplePropertyType};
 
 pub type ChannelValue = u32;
 pub static MAX_FINE_DEGREES :usize = 4;
@@ -180,6 +180,8 @@ impl Fixture {
                 color.reserve_final(&*name, universe);
             }
         }
+
+        send_dmx_config_update();
 
         return_value
     }

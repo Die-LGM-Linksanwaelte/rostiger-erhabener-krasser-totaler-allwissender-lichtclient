@@ -124,93 +124,48 @@ impl Channel {
         universe: usize,
         property_type: PropertyType,
     ) {
-        let mut dmx_config_copy: Option<Vec<[ChannelReservation<String, PropertyType>; MAX_CHANNEL as usize]>> = None;
+        let mut dmx_config = DMX_CONFIGURATION.write().expect(
+            "Failed to write \
+        DMX_CONFIGURATION",
+        );
 
-        {
-            let mut dmx_config = DMX_CONFIGURATION.write().expect(
-                "Failed to write \
-            DMX_CONFIGURATION",
-            );
+        //Since ensure_universe_count should have been executed before, this Error should never occur, therefore it
+        // should panic
+        let universe = match dmx_config.get_mut(universe) {
+            Some(x) => x,
+            None => {
+                r_log!(Error, "Failed to write {}-Reservation into universe {}", fixture_name, universe);
+                return;
+            }
+        };
 
-            //Since ensure_universe_count should have been executed before, this Error should never occur, therefore it
-            // should panic
-            let universe = match dmx_config.get_mut(universe) {
-                Some(x) => x,
-                None => {
-                    r_log!(Error, "Failed to write {}-Reservation into universe {}", fixture_name, universe);
+        let mut fine_degree = 0;
+
+        for channel in self.channel.get_channel_indices() {
+            let ch_index = channel as usize;
+            match &universe[ch_index] {
+                Pending(existing) if existing == fixture_name => {
+                    universe[ch_index] = Reserved(existing.clone(), property_type.clone(), fine_degree);
+                    fine_degree += 1;
+                },
+
+                Pending(_existing) => {
+                    r_log!(
+                        Error,
+                        "A property of another fixture has been set to pending, cant reserve channel for {}",
+                        fixture_name
+                    );
                     return;
                 }
-            };
 
-            let mut fine_degree = 0;
-
-            for channel in self.channel.get_channel_indices() {
-                let ch_index = channel as usize;
-                match &universe[ch_index] {
-                    Pending(existing) if existing == fixture_name => {
-                        universe[ch_index] = Reserved(existing.clone(), property_type.clone(), fine_degree);
-                        fine_degree += 1;
-                    },
-
-                    Pending(_existing) => {
-                        r_log!(
-                            Error,
-                            "A property of another fixture has been set to pending, cant reserve channel for {}",
-                            fixture_name
-                        );
-                        return;
-                    }
-
-                    _ => {
-                        r_log!(Error, "Error: In {}, a channel has not correctly been set to Pending. \
-                        This could happen if the fixture_type has multiple properties bound to the same channel.",
-                        fixture_name);
-                        return;
-                    }
+                _ => {
+                    r_log!(Error, "Error: In {}, a channel has not correctly been set to Pending. \
+                    This could happen if the fixture_type has multiple properties bound to the same channel.",
+                    fixture_name);
+                    return;
                 }
             }
-
-            dmx_config_copy = Some(dmx_config.clone());
         }
-
-        if let Some(dmx_config) = dmx_config_copy {
-            let dmx_conf_for_client: Vec<Vec<DMXConfigurationForClient>> = dmx_config.iter().map(|universe| {
-                universe.iter().map(|channel| {
-                    match channel {
-                        Reserved(fixture, property, fine_degree) => {
-                            let fixtures = &FIXTURE_LIST.read().unwrap().fixtures;
-                            let fixture_type = match fixtures.get(&fixture.clone()) {
-                                Some(fixture_object) => fixture_object.get_fixture_type(),
-                                None => {
-                                    r_log!(Error,"Fixture {} is saved in DMXConfiguration, but not in  FixtureList.",
-                                        fixture
-                                    );
-                                    return DMXConfigurationForClient::Empty;
-                                }
-                            };
-
-                            let mut hasher = DefaultHasher::new();
-                            fixture_type.hash(&mut hasher);
-                            let full_hash: u64 = hasher.finish();
-                            let fixture_type_hash = (full_hash % 256) as u8;
-
-                            DMXConfigurationForClient::Reserved {
-                                fixture_name: fixture.clone(),
-                                property_type: property.clone(),
-                                fine_degree: *fine_degree,
-                                fixture_type_hash
-                            }
-                        }
-                        _ => DMXConfigurationForClient::Empty,
-                    }
-                }).collect()
-            }).collect();
-
-            on_dmx_config_update(dmx_conf_for_client);
-        } else {
-            unreachable!();
-        }
-
     }
 
     /// Returns the coarse DMX output value as `Vec<(channel_index, 8-bit value)>` . If fine, ultra, uber, ... channels
@@ -361,6 +316,43 @@ impl ChannelParameter {
     pub fn get_channel_indices(&self) -> ArrayVec<ChannelIndex, MAX_FINE_DEGREES> {
         self.channel.clone()
     }
+}
+
+pub(crate) fn send_dmx_config_update() {
+    let dmx_config = DMX_CONFIGURATION.read().unwrap();
+    let dmx_conf_for_client: Vec<Vec<DMXConfigurationForClient>> = dmx_config.iter().map(|universe| {
+        universe.iter().map(|channel| {
+            match channel {
+                Reserved(fixture, property, fine_degree) => {
+                    let fixtures = &FIXTURE_LIST.read().unwrap().fixtures;
+                    let fixture_type = match fixtures.get(&fixture.clone()) {
+                        Some(fixture_object) => fixture_object.get_fixture_type(),
+                        None => {
+                            r_log!(Error,"Fixture {} is saved in DMXConfiguration, but not in  FixtureList.",
+                                        fixture
+                                    );
+                            return DMXConfigurationForClient::Empty;
+                        }
+                    };
+
+                    let mut hasher = DefaultHasher::new();
+                    fixture_type.hash(&mut hasher);
+                    let full_hash: u64 = hasher.finish();
+                    let fixture_type_hash = (full_hash % 256) as u8;
+
+                    DMXConfigurationForClient::Reserved {
+                        fixture_name: fixture.clone(),
+                        property_type: property.clone(),
+                        fine_degree: *fine_degree,
+                        fixture_type_hash
+                    }
+                }
+                _ => DMXConfigurationForClient::Empty,
+            }
+        }).collect()
+    }).collect();
+
+    on_dmx_config_update(dmx_conf_for_client);
 }
 
 impl SimplePropertyType {
