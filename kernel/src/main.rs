@@ -16,7 +16,7 @@ fn main() -> io::Result<()> {
     }
 
     Logger::global().add_sink(Box::new(TerminalSink {cli_prompt: Some("> ".into())}));
-    Logger::global().add_sink(Box::new(FileSink::new("kernel.log")));
+    Logger::global().add_sink(Box::new(FileSink::new("/tmp/kernel.log")));
 
     let _artnet_handle = thread::spawn(|| {
         dmx_output_loop().expect("\x1b[31martnet loop failed\x1b[0m");

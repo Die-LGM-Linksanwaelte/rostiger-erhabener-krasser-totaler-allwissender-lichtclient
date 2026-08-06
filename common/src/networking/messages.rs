@@ -5,6 +5,8 @@ use serde::{Deserialize, Serialize};
 use crate::logging::LogLevel;
 use crate::cli::CliAction;
 use crate::networking::connection_engine::SessionID;
+pub(super) use crate::networking::subscriptions::{SubscribeTopic, UpdateMode};
+use crate::networking::subscriptions::TopicPayload;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct HandshakeRequest {
@@ -17,19 +19,6 @@ pub struct HandshakeRequest {
 pub enum HandshakeResponse {
     Ok,
     Mismatch { server_version: String },
-}
-
-//TODO: Add better topics when we know wich topics are subscribe worthy
-#[derive(Serialize, Deserialize, Debug)]
-pub enum SubscribeTopic {
-    Universes,
-    FixturePositions,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub enum UpdateMode {
-    OnChange,
-    Continuous,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -74,7 +63,7 @@ pub enum TcpClientMessage {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum TcpServerMessage {
     //Answer when sending anything without being logged in
     Unauthenticated,
@@ -98,8 +87,7 @@ pub enum TcpServerMessage {
     },
 
     TopicUpdate {
-        topic: SubscribeTopic,
-        data: Vec<u8>
+        data: TopicPayload,
     },
 
     EditGranted {
@@ -116,7 +104,7 @@ pub enum TcpServerMessage {
 
 
 //Dummy Enum until I implement it right
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum EditableResource {
     Cuelist,
 }

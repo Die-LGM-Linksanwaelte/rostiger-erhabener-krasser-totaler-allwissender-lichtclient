@@ -1,12 +1,19 @@
+use crate::r_log;
 use std::fmt;
 use std::fmt::{Display, Formatter};
+use arrayvec::ArrayVec;
 use serde::{Deserialize, Serialize};
 use crate::fixture::{
-    ensure_universes_size, ChannelIndex, ChannelValue, Fixture, FixtureError, DMX_CONFIGURATION, MAX_CHANNEL, 
-    MAX_FINE_DEGREES
+    ensure_universes_size, ChannelIndex, ChannelValue, Fixture, FixtureError, DMX_CONFIGURATION, FIXTURE_LIST,
+    MAX_CHANNEL, MAX_FINE_DEGREES
 };
 use crate::fixture::channel::ChannelReservation::{Pending, Reserved};
 use crate::fixture::color::{Color, ColorPropertyType};
+use crate::logging::LogLevel::*;
+use crate::networking::{DMXConfigurationForClient, on_dmx_config_update};
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
+
 
 /// Represents the reservation state of a single Scheißprogrammhannel.
 ///
@@ -17,10 +24,11 @@ use crate::fixture::color::{Color, ColorPropertyType};
 pub enum ChannelReservation<T, U> {
     Empty,
     Pending(T),
-    Reserved(T, U),
+    Reserved(T, U, usize),
 }
 
 /// A single Scheißprogrammhannel with an optional fine channel for 16-bit control.
+#[derive(Clone)]
 pub(crate) struct Channel {
     pub(crate) value: ChannelValue,
     channel: ChannelParameter,
@@ -91,7 +99,7 @@ impl Channel {
             .expect("Universe out of range");
 
         for channel in self.channel.get_channel_indices() {
-            if let Reserved(existing, property) = universe[channel as usize].clone() {
+            if let Reserved(existing, property, _) = universe[channel as usize].clone() {
                 return Err(ChannelError::ChannelAlreadyInUse(format!("{}, {}", existing, property)));
             }
 
@@ -116,36 +124,93 @@ impl Channel {
         universe: usize,
         property_type: PropertyType,
     ) {
-        let mut dmx_config = DMX_CONFIGURATION.write().expect(
-            "Failed to write \
-        DMX_CONFIGURATION",
-        );
+        let mut dmx_config_copy: Option<Vec<[ChannelReservation<String, PropertyType>; MAX_CHANNEL as usize]>> = None;
 
-        //Since ensure_universe_count should have been executed before, this Error should never occur, therefore it
-        // should panic
-        let universe = dmx_config
-            .get_mut(universe)
-            .ok_or(ChannelError::UniverseOutOfRange)
-            .expect("Universe out of range.");
+        {
+            let mut dmx_config = DMX_CONFIGURATION.write().expect(
+                "Failed to write \
+            DMX_CONFIGURATION",
+            );
 
-        for channel in self.channel.get_channel_indices() {
-            if let Pending(existing) = universe[channel as usize].clone() {
-                if existing == fixture_name {
-                    universe[channel as usize] = Reserved(existing, property_type.clone());
-                } else {
-                    panic!(
-                        "A property of another fixture has been set to pending, cant reserve channel for {}",
-                        fixture_name
-                    )
+            //Since ensure_universe_count should have been executed before, this Error should never occur, therefore it
+            // should panic
+            let universe = match dmx_config.get_mut(universe) {
+                Some(x) => x,
+                None => {
+                    r_log!(Error, "Failed to write {}-Reservation into universe {}", fixture_name, universe);
+                    return;
                 }
-            } else {
-                panic!(
-                    "Error: In {}, a channel has not correctly been set to Pending. \
-                    This could happen if the fixture_type has multiple properties bound to the same channel.",
-                    fixture_name
-                );
+            };
+
+            let mut fine_degree = 0;
+
+            for channel in self.channel.get_channel_indices() {
+                let ch_index = channel as usize;
+                match &universe[ch_index] {
+                    Pending(existing) if existing == fixture_name => {
+                        universe[ch_index] = Reserved(existing.clone(), property_type.clone(), fine_degree);
+                        fine_degree += 1;
+                    },
+
+                    Pending(_existing) => {
+                        r_log!(
+                            Error,
+                            "A property of another fixture has been set to pending, cant reserve channel for {}",
+                            fixture_name
+                        );
+                        return;
+                    }
+
+                    _ => {
+                        r_log!(Error, "Error: In {}, a channel has not correctly been set to Pending. \
+                        This could happen if the fixture_type has multiple properties bound to the same channel.",
+                        fixture_name);
+                        return;
+                    }
+                }
             }
+
+            dmx_config_copy = Some(dmx_config.clone());
         }
+
+        if let Some(dmx_config) = dmx_config_copy {
+            let dmx_conf_for_client: Vec<Vec<DMXConfigurationForClient>> = dmx_config.iter().map(|universe| {
+                universe.iter().map(|channel| {
+                    match channel {
+                        Reserved(fixture, property, fine_degree) => {
+                            let fixtures = &FIXTURE_LIST.read().unwrap().fixtures;
+                            let fixture_type = match fixtures.get(&fixture.clone()) {
+                                Some(fixture_object) => fixture_object.get_fixture_type(),
+                                None => {
+                                    r_log!(Error,"Fixture {} is saved in DMXConfiguration, but not in  FixtureList.",
+                                        fixture
+                                    );
+                                    return DMXConfigurationForClient::Empty;
+                                }
+                            };
+
+                            let mut hasher = DefaultHasher::new();
+                            fixture_type.hash(&mut hasher);
+                            let full_hash: u64 = hasher.finish();
+                            let fixture_type_hash = (full_hash % 256) as u8;
+
+                            DMXConfigurationForClient::Reserved {
+                                fixture_name: fixture.clone(),
+                                property_type: property.clone(),
+                                fine_degree: *fine_degree,
+                                fixture_type_hash
+                            }
+                        }
+                        _ => DMXConfigurationForClient::Empty,
+                    }
+                }).collect()
+            }).collect();
+
+            on_dmx_config_update(dmx_conf_for_client);
+        } else {
+            unreachable!();
+        }
+
     }
 
     /// Returns the coarse DMX output value as `Vec<(channel_index, 8-bit value)>` . If fine, ultra, uber, ... channels
@@ -254,17 +319,19 @@ impl Display for PropertyType {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ChannelParameter {
-    channel: Vec<ChannelIndex>//(ChannelIndex, Option<(ChannelIndex, Option<(ChannelIndex, Option<ChannelIndex>)>)>)
+    channel: ArrayVec<ChannelIndex, MAX_FINE_DEGREES>
 }
 
 impl ChannelParameter {
     pub fn new(channel_index: ChannelIndex) -> Self {
+        let mut channel = ArrayVec::new();
+        channel.push(channel_index);
         Self {
-            channel: vec![channel_index],
+            channel,
         }
     }
 
-    pub fn add_fine(&mut self, fine_degree: u8, fine_index: ChannelIndex) -> Result<(),ChannelError> {
+    pub fn add_fine(&mut self, fine_degree: usize, fine_index: ChannelIndex) -> Result<(),ChannelError> {
         if fine_degree > MAX_FINE_DEGREES {
             return Err(ChannelError::FineDegreeOutOfRange(fine_degree));
         }
@@ -291,7 +358,7 @@ impl ChannelParameter {
         Ok(Self { channel:channels })
     }
 
-    pub fn get_channel_indices(&self) -> Vec<ChannelIndex> {
+    pub fn get_channel_indices(&self) -> ArrayVec<ChannelIndex, MAX_FINE_DEGREES> {
         self.channel.clone()
     }
 }
@@ -367,9 +434,9 @@ pub enum ChannelError {
     /// The channel is already reserved by the named fixture.
     ChannelAlreadyInUse(String),
     /// The channel has the same fine-degree multiple times
-    FineDegreeExists(u8),
+    FineDegreeExists(usize),
     /// The channel has too high fine-degrees, while lower fine-degrees don't exist
-    FineDegreeTooHigh(u8),
+    FineDegreeTooHigh(usize),
     //The channel has to many fine-channels
-    FineDegreeOutOfRange(u8),
+    FineDegreeOutOfRange(usize),
 }

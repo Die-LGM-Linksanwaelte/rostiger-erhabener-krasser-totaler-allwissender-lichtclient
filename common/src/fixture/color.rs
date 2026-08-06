@@ -9,6 +9,7 @@ use crate::fixture::channel::ChannelParameter;
 
 /// Represents a color with its channel values for all supported color models
 /// (RGB, CMY, and HSV).
+#[derive(Clone)]
 pub struct Color {
     output_type: OutputType,
     color1: Option<Channel>,
@@ -41,7 +42,7 @@ pub struct ColorType {
 enum OutputType {
     RGB,
     HSV,
-    CMY,
+    CMY
 }
 
 /// Identifies a specific channel or property of a [`Color`].
@@ -55,7 +56,7 @@ pub enum ColorPropertyType {
     Yellow,
     Hue,
     Saturation,
-    Value,
+    Value
 }
 
 impl ColorPropertyType {
@@ -73,7 +74,7 @@ impl ColorPropertyType {
             (2, HSV) => Some(ColorPropertyType::Saturation),
             (3, HSV) => Some(ColorPropertyType::Value),
 
-            _ => None,
+            _ => None
         }
     }
 
@@ -114,7 +115,7 @@ impl ColorPropertyType {
             "hue" => Ok(ColorPropertyType::Hue),
             "saturation" => Ok(ColorPropertyType::Saturation),
             "value" => Ok(ColorPropertyType::Value),
-            _ => Err(FixtureError::InvalidPropertyType(property.to_string())),
+            _ => Err(FixtureError::InvalidPropertyType(property.to_string()))
         }
     }
 }
@@ -136,6 +137,7 @@ impl Display for ColorPropertyType {
 }
 
 impl ColorType {
+
     /// Creates an empty [`ColorType`] with no output type or channels set.
     pub fn new() -> Self {
         Self {
@@ -175,10 +177,9 @@ impl ColorType {
 
         if let Some(old_type) = self.output_type {
             if old_type != new_type {
-                return Err(FixtureError::MultipleColorOutputTypes(format!(
-                    "{s} is incompatible with {:?}",
-                    old_type
-                )));
+                return Err(FixtureError::MultipleColorOutputTypes(
+                   format!("{s} is incompatible with {:?}", old_type)
+                ));
             }
         }
 
@@ -188,7 +189,7 @@ impl ColorType {
             1 => &mut self.color1,
             2 => &mut self.color2,
             3 => &mut self.color3,
-            _ => unreachable!(),
+            _ => unreachable!()
         };
 
         *target = Some(value);
@@ -203,6 +204,7 @@ impl ColorType {
 }
 
 impl Color {
+
     /// Creates a [`Color`] from a [`ColorType`] template and reserves the required DMXChannels.
     ///
     /// Called internally by [`Fixture::new`].
@@ -221,10 +223,7 @@ impl Color {
     ///
     /// Returns a [`ChannelError`] if any channel could not be created or reserved.
     pub fn new(
-        color_type: &ColorType,
-        device_channel: u16,
-        universe: usize,
-        fixture_name: &str,
+        color_type: &ColorType, device_channel: u16, universe: usize, fixture_name: &str
     ) -> Result<Self, ChannelError> {
         let default_value = if color_type.output_type == Some(CMY) {
             ChannelValue::MAX
@@ -247,6 +246,8 @@ impl Color {
 
         let output_type = color_type.output_type.unwrap();
 
+
+
         if let Some(color) = &color1 {
             color.reserve_pending(fixture_name, universe)?;
         }
@@ -257,18 +258,6 @@ impl Color {
             color.reserve_pending(fixture_name, universe)?;
         }
 
-        if let Some(color) = &color1 {
-            let property = PropertyType::Color(ColorPropertyType::new(1, output_type).unwrap());
-            color.reserve_final(fixture_name, universe, property);
-        }
-        if let Some(color) = &color2 {
-            let property = PropertyType::Color(ColorPropertyType::new(2, output_type).unwrap());
-            color.reserve_final(fixture_name, universe, property);
-        }
-        if let Some(color) = &color3 {
-            let property = PropertyType::Color(ColorPropertyType::new(3, output_type).unwrap());
-            color.reserve_final(fixture_name, universe, property);
-        }
 
         Ok(Self {
             output_type,
@@ -284,7 +273,23 @@ impl Color {
             hue: 0 as ChannelValue,
             saturation: 0 as ChannelValue,
             value: 0 as ChannelValue,
+
         })
+    }
+
+    pub fn reserve_final(&self, fixture_name: &str, universe: usize) {
+        if let Some(color) = &self.color1 {
+            let property = PropertyType::Color(ColorPropertyType::new(1, self.output_type).unwrap());
+            color.reserve_final(fixture_name, universe, property);
+        }
+        if let Some(color) = &self.color2 {
+            let property = PropertyType::Color(ColorPropertyType::new(2, self.output_type).unwrap());
+            color.reserve_final(fixture_name, universe, property);
+        }
+        if let Some(color) = &self.color3 {
+            let property = PropertyType::Color(ColorPropertyType::new(3, self.output_type).unwrap());
+            color.reserve_final(fixture_name, universe, property);
+        }
     }
     
     fn set_color(&mut self) {
@@ -320,7 +325,7 @@ impl Color {
         self.saturation = if max == 0 {
             0
         } else {
-            ((delta as FloatChannelValue * ChannelValue::MAX as FloatChannelValue) / max as FloatChannelValue).round()
+            ((delta as FloatChannelValue * ChannelValue::MAX as FloatChannelValue) / max as FloatChannelValue ).round()
                 as ChannelValue
         };
         let mut hue: SignedChannelValue = (ChannelValue::MAX as FloatChannelValue / 6.0 as FloatChannelValue
@@ -339,7 +344,7 @@ impl Color {
         }
 
         self.hue = hue as ChannelValue;
-
+        
         self.set_color()
     }
 
@@ -352,7 +357,7 @@ impl Color {
             (saturation as FloatChannelValue / ChannelValue::MAX as FloatChannelValue)).round() as ChannelValue;
         let m = value.saturating_sub(c);
         let h = hue as FloatChannelValue / (ChannelValue::MAX as FloatChannelValue / 6 as FloatChannelValue);
-        let x = (c as FloatChannelValue * (1.0 - ((h % 2.0) - 1.0).abs()) ).round() as ChannelValue;
+        let x = ( c as FloatChannelValue * (1.0 - ((h % 2.0) - 1.0).abs()) ).round() as ChannelValue;
 
         let (r, g, b) = match h {
             n if n < 1.0 => (c, x, 0),
@@ -361,7 +366,7 @@ impl Color {
             n if n < 4.0 => (0, x, c),
             n if n < 5.0 => (x, 0, c),
             n if n <= 6.0 => (c, 0, x),
-            _ => (0, 0, 0),
+            _ => (0, 0, 0)
         };
 
         self.red = r.saturating_add(m);
@@ -405,6 +410,9 @@ impl Color {
                 ChannelValue::MAX - value3
             ),
         }
+
+
+
     }
 
     /// Returns the current DMX output values of all active color channels.

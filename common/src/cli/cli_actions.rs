@@ -1,3 +1,4 @@
+use crate::r_log;
 use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 use crate::cli::command_parsing::parse_debug_command;

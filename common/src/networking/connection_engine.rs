@@ -3,6 +3,7 @@ use std::sync::{LazyLock, RwLock};
 use std::sync::atomic::AtomicU64;
 use crate::networking::messages::{TcpServerMessage, UserRole};
 use std::sync::mpsc::Sender;
+use crate::networking::subscriptions::{SubscribeTopic, UpdateMode};
 
 pub type SessionID = u64;
 
@@ -18,5 +19,7 @@ pub struct ClientSession {
     pub user_name: String,
     pub user_role: UserRole,
 
-    pub active_connection: Option<(Sender<TcpServerMessage>, u64)>
+    pub active_connection: Option<(Sender<TcpServerMessage>, ConnectionID)>,
+    pub subscriptions: Vec<(SubscribeTopic, UpdateMode)>,
+    
 }
