@@ -1,3 +1,4 @@
+use crate::r_log;
 use std::io::{Read, Write};
 use std::net::{Shutdown, TcpListener, TcpStream};
 use std::{thread};
@@ -8,7 +9,7 @@ use rand::{RngExt};
 use crate::cli::command_parsing::run_command;
 use crate::logging::LogLevel::*;
 use crate::networking::connection_engine::{ClientSession, ConnectionID, SessionID, NEXT_CONNECTION_ID, SERVER_STATE};
-use crate::networking::messages::{HandshakeRequest, HandshakeResponse, SubscribeTopic, TcpClientMessage, TcpServerMessage, UpdateMode};
+use crate::networking::messages::{HandshakeRequest, HandshakeResponse, TcpClientMessage, TcpServerMessage, UpdateMode};
 use crate::networking::messages::TcpServerMessage::{CommandOutput, LogoutOk};
 
 pub fn activate_socket(port: u16) {
@@ -168,7 +169,7 @@ fn read_thread(stream: &mut TcpStream, connection_id: ConnectionID, tx_channel: 
             TcpClientMessage::Logout => { unreachable!() },
 
             _ => {
-                if let Some(response) = handle_messages(msg, connection_id) {
+                if let Some(response) = handle_messages(msg, connection_id, token.unwrap()) {
                     if let Err(e) = tx_channel.send(response) {
                         r_log!(Error,"[Conn {}] Got error while sending response to channel: {}", connection_id, e);
                     }
@@ -260,6 +261,7 @@ fn update_login_status(
                     user_name: user_name.clone(),
                     user_role: *user_role,
                     active_connection: Some((tx_channel.clone(), connection_id)),
+                    subscriptions: vec![]
                 });
 
                 r_log!(SuccessEvent,"[Conn {}] Logged in with Session-Token {}", connection_id, new_token);
@@ -295,7 +297,7 @@ fn update_login_status(
                 session.active_connection = Some((tx_channel.clone(), connection_id));
 
                 if *clear_subscriptions {
-                    //TODO Clear Subscriptions, wenn die Infrastruktur dafür da ist
+                    session.subscriptions.clear();
                 }
 
                 r_log!(SuccessEvent,"[Conn {}] User with ID {} relogged in  successfully", connection_id, user_id);
@@ -332,28 +334,26 @@ fn update_login_status(
     new_token
 }
 
-fn handle_messages(msg: TcpClientMessage, connection_id: ConnectionID) -> Option<TcpServerMessage> {
+fn handle_messages(msg: TcpClientMessage, connection_id: ConnectionID, token: SessionID) -> Option<TcpServerMessage> {
     match msg {
         TcpClientMessage::Login {..} | TcpClientMessage::Logout | TcpClientMessage::Relogin {..} => unreachable!(),
 
 
         TcpClientMessage::Subscribe {topic, update_mode} => {
-            let topic_name = match topic {
-                SubscribeTopic::FixturePositions => "Fixture Positions",
-                SubscribeTopic::Universes => "Universes",
-            };
+            let mut server_state = SERVER_STATE.write().unwrap();
+            let mut user_data = server_state.get_mut(&token);
+            if let Some(user_data) = user_data {
+                user_data.subscriptions.push((topic.clone(), update_mode.clone()));
+            }
             r_log!(Info,"[Conn {}] {}", connection_id, match update_mode {
-                UpdateMode::OnChange => format!("Der Client will über Änderungen von {} erfahren!", topic_name),
-                UpdateMode::Continuous => format!("Der Client will über {} auf dem laufenden gehalten werden", topic_name),
+                UpdateMode::OnChange => format!("Der Client will über Änderungen von {} erfahren!", topic),
+                UpdateMode::Continuous => format!("Der Client will über {} auf dem laufenden gehalten werden", topic),
             }); //TODO Normally we always should respond to this
             None
         }
 
         TcpClientMessage::Unsubscribe { topic } => {
-            r_log!(Info,"[Conn {}] Der Client will nichts von {} wissen.", connection_id, match topic {
-                SubscribeTopic::FixturePositions => "Fixture Positions",
-                SubscribeTopic::Universes => "Universes",
-            });
+            r_log!(Info,"[Conn {}] Der Client will nichts von {} wissen.", connection_id, topic );
             None
         }
 
@@ -380,7 +380,7 @@ fn handle_messages(msg: TcpClientMessage, connection_id: ConnectionID) -> Option
             None
         }
 
-        TcpClientMessage::SubmitEdit {resource, new_data} => {
+        TcpClientMessage::SubmitEdit {resource:_, new_data:_} => {
             r_log!(Info,"[Conn {}] Yo, der Nutzer ist fertig mit Resource, yo", connection_id);
             None
         }

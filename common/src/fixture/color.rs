@@ -9,6 +9,7 @@ use crate::fixture::channel::ChannelParameter;
 
 /// Represents a color with its channel values for all supported color models
 /// (RGB, CMY, and HSV).
+#[derive(Clone)]
 pub struct Color {
     output_type: OutputType,
     color1: Option<Channel>,
@@ -257,21 +258,6 @@ impl Color {
             color.reserve_pending(fixture_name, universe)?;
         }
 
-        if let Some(color) = &color1 {
-            let property = PropertyType::Color(ColorPropertyType::new(1, output_type).unwrap());
-            color.reserve_final(fixture_name, universe, property);
-        }
-        if let Some(color) = &color2 {
-            let property = PropertyType::Color(ColorPropertyType::new(2, output_type).unwrap());
-            color.reserve_final(fixture_name, universe, property);
-        }
-        if let Some(color) = &color3 {
-            let property = PropertyType::Color(ColorPropertyType::new(3, output_type).unwrap());
-            color.reserve_final(fixture_name, universe, property);
-        }
-
-
-
 
         Ok(Self {
             output_type,
@@ -289,6 +275,21 @@ impl Color {
             value: 0 as ChannelValue,
 
         })
+    }
+
+    pub fn reserve_final(&self, fixture_name: &str, universe: usize) {
+        if let Some(color) = &self.color1 {
+            let property = PropertyType::Color(ColorPropertyType::new(1, self.output_type).unwrap());
+            color.reserve_final(fixture_name, universe, property);
+        }
+        if let Some(color) = &self.color2 {
+            let property = PropertyType::Color(ColorPropertyType::new(2, self.output_type).unwrap());
+            color.reserve_final(fixture_name, universe, property);
+        }
+        if let Some(color) = &self.color3 {
+            let property = PropertyType::Color(ColorPropertyType::new(3, self.output_type).unwrap());
+            color.reserve_final(fixture_name, universe, property);
+        }
     }
     
     fn set_color(&mut self) {

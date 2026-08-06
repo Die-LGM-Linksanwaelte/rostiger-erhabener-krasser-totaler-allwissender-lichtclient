@@ -209,7 +209,7 @@ fn parse_new_fixture_type(mut args: SplitAsciiWhitespace) -> Result<CliAction,St
 
             match properties.get_mut(&property_type) {
                 Some(channel_object) => {
-                    match channel_object.add_fine(fine_degree, channel_index) {
+                    match channel_object.add_fine(fine_degree.into(), channel_index) {
                         Err(FineDegreeTooHigh(f)) =>
                             return Err(format!("Fine-degree {} is too high, add the lower ones first", f)),
                         Err(FineDegreeExists(f)) =>

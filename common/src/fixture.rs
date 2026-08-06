@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use crate::fixture::channel::{Channel, ChannelReservation, SimplePropertyType};
 
 pub type ChannelValue = u32;
-pub static MAX_FINE_DEGREES :u8 = 4;
+pub static MAX_FINE_DEGREES :usize = 4;
 pub type SignedChannelValue = i64;
 pub type FloatChannelValue = f64;
 
@@ -137,18 +137,10 @@ impl Fixture {
             })
             .collect::<Result<HashMap<SimplePropertyType, Channel>, ChannelError>>()?;
 
-        properties.iter().for_each(|(property_type, channel)| {
-            channel.reserve_final(
-                &*name,
-                universe,
-                PropertyType::Simple(property_type.clone()),
-            );
-        });
-
         let fixture = Self {
-            color,
+            color: color.clone(),
             fixture_type: fixture_type.name.clone(),
-            properties,
+            properties: properties.clone(),
             start_channel,
             universe,
             name: name.clone(),
@@ -160,15 +152,36 @@ impl Fixture {
 
         let mut list = FIXTURE_LIST.write().unwrap();
 
-        match list.fixtures.entry(name.clone()) {
+        let return_value = match list.fixtures.entry(name.clone()) {
             std::collections::hash_map::Entry::Occupied(_) => {
-                Err(FixtureError::FixtureNameAlreadyInUse(name))
+                Err(FixtureError::FixtureNameAlreadyInUse(name.clone()))
             }
             std::collections::hash_map::Entry::Vacant(entry) => {
                 entry.insert(fixture);
                 Ok(())
             }
+        };
+
+        // I have a clue why, but for some reason (the fixture list is read in Channel::reserve_final) we have to
+        // specifically drop the list here, otherwise we have a deadlock. Normally, this should happen automatically, 
+        // no clue why ist doesn't.
+        drop(list);
+
+        if let Ok(_) = return_value {
+            properties.iter().for_each(|(property_type, channel)| {
+                channel.reserve_final(
+                    &*name,
+                    universe,
+                    PropertyType::Simple(property_type.clone()),
+                );
+            });
+
+            if let Some(color) = color {
+                color.reserve_final(&*name, universe);
+            }
         }
+
+        return_value
     }
 
     /// Sets the value of a property on the named fixture.

@@ -73,7 +73,7 @@ impl Logger {
 #[macro_export]
 macro_rules! r_log {
     ($level:expr, $($arg:tt)*) => {
-        $crate::logging::Logger::global().dispatch($level, format!($($arg)*));
+        $crate::logging::Logger::global().dispatch($level, format!($($arg)*))
     }
 }
 

@@ -1,9 +1,10 @@
-mod fixture;
 use std::io::{self, Read, Write};
 use std::net::TcpStream;
 use std::thread;
 use std::env;
-use common::networking::messages::{TcpClientMessage, TcpServerMessage, UpdateMode, SubscribeTopic, UserRole, HandshakeRequest, HandshakeResponse};
+use common::networking::messages::{TcpClientMessage, TcpServerMessage, UserRole, HandshakeRequest, HandshakeResponse};
+use common::networking::{SubscribeTopic, UpdateMode};
+
 ///startPoint - This is the main entry point of the common application.
 fn main() {
     println!("EDER stinkt!");
@@ -123,10 +124,7 @@ fn main() {
                                     std::process::exit(0); // Client beenden
                                 }
                                 TcpServerMessage::CommandOutput{answer: result, ..} => {
-                                    match result {
-                                        Ok(response) => println!("[Server]: {}", response),
-                                        Err(e) => println!("[Server Error]: \x1b[31m{}\x1b[0m", e),
-                                    }
+                                    println!("[{}] {}", result.0, result.1);
                                 }
                                 _ => {}
                             }
@@ -167,31 +165,17 @@ fn main() {
             },
 
             "2" => TcpClientMessage::Subscribe {
-                topic: SubscribeTopic::Universes,
+                topic: SubscribeTopic::DMXConfiguration,
                 update_mode: UpdateMode::OnChange,
             },
 
             "3" => TcpClientMessage::Subscribe {
-                topic: SubscribeTopic::Universes,
-                update_mode: UpdateMode::Continuous,
-            },
-
-            "4" => TcpClientMessage::Subscribe {
-                topic: SubscribeTopic::FixturePositions,
-                update_mode: UpdateMode::OnChange,
-            },
-
-            "5" => TcpClientMessage::Subscribe {
-                topic: SubscribeTopic::FixturePositions,
+                topic: SubscribeTopic::DMXConfiguration,
                 update_mode: UpdateMode::Continuous,
             },
 
             "6" => TcpClientMessage::Unsubscribe {
-                topic: SubscribeTopic::Universes,
-            },
-
-            "7" => TcpClientMessage::Unsubscribe {
-                topic: SubscribeTopic::FixturePositions,
+                topic: SubscribeTopic::DMXConfiguration,
             },
 
             "8" => TcpClientMessage::Logout,
@@ -229,11 +213,11 @@ fn main() {
 
             "0" => break, // Beendet die Schleife und damit das Programm
 
-            command => TcpClientMessage::ExecuteCommand {command: command.into(), terminal_id: 0},
+            command => TcpClientMessage::ExecuteCommand {command: command.into(), response_id: 0},
         };
 
         // Nachricht senden, Thread blockiert hier NICHT mehr auf eine Antwort!
-        if let Ok(bytes) = bincode::deserialize::<Vec<u8>>(&bincode::serialize(&msg).unwrap()) {
+        if let Ok(_bytes) = bincode::deserialize::<Vec<u8>>(&bincode::serialize(&msg).unwrap()) {
             // Nur eine kleine Sicherheit gegen kaputte Serialize-Aufrufe.
             // Besser direkt:
         }
