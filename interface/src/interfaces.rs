@@ -1,11 +1,11 @@
 use crate::artnet::ArtnetInterface;
 use common::fixture::{MAX_CHANNEL, calculate_dmx_values};
+use common::logging::LogLevel::*;
+use common::r_log;
 use std::io;
 use std::net::UdpSocket;
 use std::thread::sleep;
 use std::time::{Duration, Instant};
-use common::logging::LogLevel::*;
-use common::r_log;
 
 const TARGET: &str = "255.255.255.255:6454";
 const FREQUENCY: u64 = 23;
@@ -37,7 +37,7 @@ pub fn dmx_output_loop() -> io::Result<()> {
     let artnet_interface: Box<dyn DmxInterface> =
         Box::new(ArtnetInterface::new(socket, TARGET.to_string()));
 
-    r_log!(Info,"Starting artnet");
+    r_log!(Info, "Starting artnet");
 
     loop {
         let start = Instant::now();

@@ -28,16 +28,7 @@ pub struct TerminalPanel {
 impl TerminalPanel {
     /// Creates a new instance of the terminal panel.
     pub fn new(tab_id: u32) -> Self {
-        let initial_line = vec![
-            TextFragment {
-                text: "> ".to_string(),
-                color: Color32::GRAY,
-            },
-            TextFragment {
-                text: "Konsole bereit...".to_string(), //TODO: erst printen, wenn connection established ist
-                color: Color32::RED,
-            },
-        ];
+        let initial_line = vec![];
         Self {
             tab_id,
             input_text: String::new(),
@@ -67,7 +58,6 @@ impl TerminalPanel {
     /// Draws the top bar of the terminal, including the title and settings button.
     fn draw_top_bar(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
-            ui.label(egui::RichText::new("Terminal").strong());
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui.button("⚙").on_hover_text("Settings").clicked() {
                     self.settings_open = true;
@@ -200,9 +190,9 @@ impl TerminalPanel {
 
     /// Renders the UI logic for the terminal panel.
     pub fn ui(&mut self, ui: &mut egui::Ui) {
-        self.draw_top_bar(ui);
         self.draw_settings_window(ui);
         self.draw_central_panel(ui);
         self.draw_input_panel(ui);
+        self.draw_top_bar(ui);
     }
 }

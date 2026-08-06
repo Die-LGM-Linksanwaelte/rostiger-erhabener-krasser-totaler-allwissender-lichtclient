@@ -64,27 +64,40 @@ impl TcpClient {
 
         Self::set_connection_state(ConnectionState::ConnectionPending);
 
-        if let Err(e) = write_stream.write_all(&bincode::serialize(&req).unwrap()) {
-            r_log!(Error, "Error writing to TcpStream: {}", e);
+        match bincode::serialize(&req) {
+            Ok(payload) => {
+                let len = payload.len() as u32;
+                if let Err(e) = write_stream.write_all(&len.to_be_bytes()) {
+                    r_log!(Error, "Got error while sending length prefix: {}", e);
+                    return;
+                }
+                if let Err(e) = write_stream.write_all(&payload) {
+                    r_log!(Error, "Got error while sending HandshakeRequest: {}", e);
+                    return;
+                }
+            }
+            Err(e) => {
+                r_log!(Error, "Got error while serializing HandshakeRequest: {}", e);
+                return;
+            }
         }
 
-        let mut buffer = [0; 1024];
+        // Read HandshakeResponse with length prefix
+        let mut len_buf = [0u8; 4];
+        if let Err(e) = write_stream.read_exact(&mut len_buf) {
+            r_log!(Error, "Error reading HandshakeResponse length: {}", e);
+            Self::set_connection_state(ConnectionState::Error);
+            return;
+        }
+        let msg_len = u32::from_be_bytes(len_buf) as usize;
+        let mut response_buffer = vec![0u8; msg_len];
+        if let Err(e) = write_stream.read_exact(&mut response_buffer) {
+            r_log!(Error, "Error reading HandshakeResponse body: {}", e);
+            Self::set_connection_state(ConnectionState::Error);
+            return;
+        }
 
-        let bytes = match write_stream.read(&mut buffer) {
-            Ok(0) => {
-                r_log!(Error, "Connection was terminated instantly");
-                Self::set_connection_state(ConnectionState::Disconnected);
-                return;
-            }
-            Ok(b) => b,
-            Err(e) => {
-                r_log!(Error, "Read-Error: {}", e);
-                Self::set_connection_state(ConnectionState::Error);
-                return;
-            }
-        };
-
-        let res = match bincode::deserialize::<HandshakeResponse>(&buffer[..bytes]) {
+        let res = match bincode::deserialize::<HandshakeResponse>(&response_buffer) {
             Ok(res) => res,
             Err(e) => {
                 r_log!(Error, "Error deserializing HandshakeResponse: {}", e);
@@ -127,24 +140,30 @@ impl TcpClient {
 
     ///runs the listen thread that receives the tcp messages from the kernel and sends it to the controller
     fn listen_tcp(mut read_stream: TcpStream, tcp_sender: Sender<TcpServerMessage>) {
-        let mut response_buffer = [0; 4096]; // Etwas größerer Buffer schadet nie
-
         loop {
-            match read_stream.read(&mut response_buffer) {
-                Ok(0) => {
-                    r_log!(Error, "Connection was terminated");
-                    Self::set_connection_state(ConnectionState::Disconnected);
-                    break;
-                }
-                Ok(bytes_read) => {
-                    match bincode::deserialize::<TcpServerMessage>(&response_buffer[..bytes_read]) {
-                        Ok(kernel_msg) => {
-                            if let Err(e) = tcp_sender.send(kernel_msg) {
-                                r_log!(Error, "Error sending TcpServerMessage: {}", e);
+            let mut len_buf = [0u8; 4];
+            match read_stream.read_exact(&mut len_buf) {
+                Ok(_) => {
+                    let msg_len = u32::from_be_bytes(len_buf) as usize;
+                    let mut response_buffer = vec![0u8; msg_len];
+
+                    match read_stream.read_exact(&mut response_buffer){
+                        Ok(_) => {
+                            match bincode::deserialize::<TcpServerMessage>(&response_buffer) {
+                                Ok(kernel_msg) => {
+                                    if let Err(e) = tcp_sender.send(kernel_msg) {
+                                        r_log!(Error, "Error sending TcpServerMessage: {}", e);
+                                    }
+                                }
+                                Err(e) => {
+                                    r_log!(Error, "Error deserializing TcpServerMessage: {}", e);
+                                }
                             }
                         }
                         Err(e) => {
-                            r_log!(Error, "Error deserializing TcpServerMessage: {}", e);
+                            r_log!(Error, "Error reading from TcpStream: {}", e);
+                            Self::set_connection_state(ConnectionState::Error);
+                            break;
                         }
                     }
                 }
@@ -161,24 +180,23 @@ impl TcpClient {
     fn write_thread(&self, mut write_stream: TcpStream) {
         while let Ok(message) = self.tcp_receiver.recv() {
             match bincode::serialize(&message) {
-                Ok(serialized_response) => {
-                    if let Err(e) = write_stream.write_all(&serialized_response) {
-                        r_log!(
-                            Error,
-                            "Got error while sending to Server: {} Stopped write-Thread",
-                            e
-                        );
+                Ok(payload) => {
+                    let len = payload.len() as u32;
+                    if let Err(e) = write_stream.write_all(&len.to_be_bytes()) {
+                        r_log!(Error, "Got error while sending length prefix: {} Stopped write-Thread", e);
+                        break;
+                    }
+                    if let Err(e) = write_stream.write_all(&payload) {
+                        r_log!(Error, "Got error while sending to Server: {} Stopped write-Thread", e);
                         break;
                     }
                 }
-
                 Err(e) => {
                     r_log!(Error, "Got error while serializing response: {}", e);
                     break;
                 }
             }
         }
-
         //Thread the Ripper, we kill the read-thread with us
         let _ = write_stream.shutdown(Shutdown::Both);
         //r_log!(Info,"The Write-Thread {} is dead! Long live the Write-Thread!", connection_id);

@@ -5,6 +5,7 @@ use crate::panels::Tab;
 use common::logging::LogLevel;
 use common::logging::LogLevel::*;
 use common::networking::messages::{TcpClientMessage, TcpServerMessage};
+use common::networking::{DMXConfigurationForClient, SubscribeTopic, TopicPayload};
 use common::r_log;
 use eframe::egui::Color32;
 use egui_dock::DockState;
@@ -52,10 +53,34 @@ pub(crate) fn handle_incoming_network_data(
                 TcpServerMessage::LoginOk { token } => {
                     r_log!(UserSuccess, "Login Successful! Token: {}", token);
                     *session_state = SessionState::LoggedIn;
+                    for (_, tab) in tree.iter_all_tabs_mut() {
+                        if let Tab::Terminal(panel) = tab {
+                            panel.add_fragments(vec![TextFragment {
+                                text: "[INFO] Connection established, terminal ready!".to_string(),
+                                color: Color32::LIGHT_GREEN,
+                            }]);
+                        }
+                    }
                 }
                 TcpServerMessage::LoginFailed { reason } => {
                     r_log!(UserError, "Login Failed: {}", reason);
                     *session_state = SessionState::LoginFailed(reason);
+                }
+                TcpServerMessage::LogoutOk => {
+                    r_log!(UserSuccess, "Logout Successful");
+                    *session_state = SessionState::LoggedOut;
+                }
+                TcpServerMessage::TopicUpdate {data} => {
+                    r_log!(Info, "{:?}", data.get_topic().to_string());
+                    match data {
+                        TopicPayload::DMXConfiguration (dmx_config) => {
+                            for (_, tab) in tree.iter_all_tabs_mut() {
+                                if let Tab::Universe(panel) = tab {
+                                    panel.device_configuration = Some(dmx_config.clone());
+                                }
+                            }
+                        }
+                    }
                 }
                 _ => {}
             }
@@ -88,6 +113,9 @@ pub enum UiEvent {
         state: ConnectionState,
     },
     LogoutRequest,
+    SubscribeRequest {
+        topic: SubscribeTopic,
+    }
 }
 
 pub(crate) fn handle_events(
@@ -148,14 +176,23 @@ pub(crate) fn handle_events(
                 if let Some(tcp_sender) = tcp_sender {
                     if let Err(e) = tcp_sender.send(msg) {
                         r_log!(Error, "Failed to send logout request: {}", e);
-                    } else {
-                        *session_state = SessionState::LoggedOut;
                     }
                 } else {
                     r_log!(
                         Error,
                         "Failed to send logout request: tcp sender doesn't exist"
                     );
+                }
+            }
+            UiEvent::SubscribeRequest { topic } => {
+                let msg = TcpClientMessage::Subscribe {
+                    topic: topic.clone(),
+                    update_mode: common::networking::UpdateMode::OnChange,
+                };
+                if let Some(tcp_sender) = tcp_sender {
+                    if let Err(e) = tcp_sender.send(msg) {
+                        r_log!(Error, "Failed to send subscribe request: {}", e);
+                    }
                 }
             }
         }

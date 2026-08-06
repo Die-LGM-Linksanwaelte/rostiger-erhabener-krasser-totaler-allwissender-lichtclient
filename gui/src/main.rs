@@ -7,6 +7,7 @@ use eframe::egui;
 use egui_dock::{DockArea, DockState, TabViewer};
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{mpsc, LazyLock, RwLock};
+use common::networking::SubscribeTopic::DMXConfiguration;
 
 mod controller;
 mod network;
@@ -116,32 +117,7 @@ impl MyApp {
             draft_role: UserRole::Programmer,
         }
     }
-}
 
-impl eframe::App for MyApp {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        controller::handle_dmx_data(&self.dmx_receiver, &mut self.tree);
-        controller::handle_incoming_network_data(
-            &mut self.tcp_listen_receiver,
-            &mut self.tree,
-            &mut self.session_state,
-        );
-        controller::handle_events(
-            &self.ui_event_receiver,
-            &self.tcp_write_sender,
-            &mut self.connection_state,
-            &mut self.session_state,
-        );
-
-        self.draw_top_bar(ctx);
-        self.draw_bottom_bar(ctx);
-        self.draw_central_panel(ctx);
-        self.draw_connection_settings(ctx);
-        self.draw_session_settings(ctx);
-    }
-}
-
-impl MyApp {
     /// Draws the top menu bar, containing the connection and session controls.
     fn draw_top_bar(&mut self, ctx: &egui::Context) {
         egui::TopBottomPanel::top("top_bar").show(ctx, |ui| {
@@ -180,6 +156,11 @@ impl MyApp {
 
                 ui.menu_button("Window", |ui| {
                     if ui.button("Universe").clicked() {
+                        let event = UiEvent::SubscribeRequest {topic: DMXConfiguration};
+                        if let Err(e) = self.ui_event_sender.send(event) {
+                            r_log!(Error, "Failed to send UiEvent: {}", e);
+                        }
+
                         let new_tab_id = self.next_tab_id;
                         self.next_tab_id += 1;
 
@@ -378,6 +359,29 @@ impl MyApp {
                 });
             });
         });
+    }
+}
+
+impl eframe::App for MyApp {
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        controller::handle_dmx_data(&self.dmx_receiver, &mut self.tree);
+        controller::handle_incoming_network_data(
+            &mut self.tcp_listen_receiver,
+            &mut self.tree,
+            &mut self.session_state,
+        );
+        controller::handle_events(
+            &self.ui_event_receiver,
+            &self.tcp_write_sender,
+            &mut self.connection_state,
+            &mut self.session_state,
+        );
+
+        self.draw_top_bar(ctx);
+        self.draw_bottom_bar(ctx);
+        self.draw_central_panel(ctx);
+        self.draw_connection_settings(ctx);
+        self.draw_session_settings(ctx);
     }
 }
 struct MyTabViewer;

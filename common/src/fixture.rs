@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 pub mod color;
-mod channel;
+pub mod channel;
 mod fixture_type;
 pub(crate) use channel::{ChannelParameter, PropertyType, ChannelError};
 pub(crate) use fixture_type::FixtureType;
@@ -78,7 +78,7 @@ pub struct Fixture {
     fixture_type: String,
     color: Option<Color>,
     properties: HashMap<SimplePropertyType, Channel>,
-    start_channel: u16,
+    start_channel: ChannelIndex,
     universe: usize,
     name: String,
 }

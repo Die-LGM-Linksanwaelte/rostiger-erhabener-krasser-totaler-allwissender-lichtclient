@@ -7,7 +7,7 @@ use crate::networking::connection_engine::SERVER_STATE;
 use crate::networking::messages::TcpServerMessage;
 use crate::networking::messages::UpdateMode::OnChange;
 
-type DMXConfigForClientState = Vec<Vec<DMXConfigurationForClient>>;
+pub type DMXConfigForClientState = Vec<Vec<DMXConfigurationForClient>>;
 
 struct ContinuousBuffer {
     dmxconfig: DMXConfigForClientState,
@@ -82,7 +82,7 @@ fn send_updates(payload: TopicPayload, update_mode: UpdateMode) {
 }
 
 impl TopicPayload {
-    pub(crate) fn get_topic(&self) -> SubscribeTopic {
+    pub fn get_topic(&self) -> SubscribeTopic {
         match self {
             TopicPayload::DMXConfiguration(..) => SubscribeTopic::DMXConfiguration,
         }
