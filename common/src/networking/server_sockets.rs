@@ -11,6 +11,7 @@ use crate::logging::LogLevel::*;
 use crate::networking::connection_engine::{ClientSession, ConnectionID, SessionID, NEXT_CONNECTION_ID, SERVER_STATE};
 use crate::networking::messages::{HandshakeRequest, HandshakeResponse, TcpClientMessage, TcpServerMessage, UpdateMode};
 use crate::networking::messages::TcpServerMessage::{CommandOutput, LogoutOk};
+use crate::networking::subscriptions::add_subscription;
 
 pub fn activate_socket(port: u16) {
     let address = format!("0.0.0.0:{}", port);
@@ -374,11 +375,7 @@ fn handle_messages(msg: TcpClientMessage, connection_id: ConnectionID, token: Se
 
 
         TcpClientMessage::Subscribe {topic, update_mode} => {
-            let mut server_state = SERVER_STATE.write().unwrap();
-            let mut user_data = server_state.get_mut(&token);
-            if let Some(user_data) = user_data {
-                user_data.subscriptions.push((topic.clone(), update_mode.clone()));
-            }
+            add_subscription(&token, &topic, &update_mode);
             r_log!(Info,"[Conn {}] {}", connection_id, match update_mode {
                 UpdateMode::OnChange => format!("Der Client will über Änderungen von {} erfahren!", topic),
                 UpdateMode::Continuous => format!("Der Client will über {} auf dem laufenden gehalten werden", topic),

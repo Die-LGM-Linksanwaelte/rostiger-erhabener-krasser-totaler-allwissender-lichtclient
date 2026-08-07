@@ -3,7 +3,7 @@ use std::fmt::Formatter;
 use std::sync::{LazyLock, RwLock};
 use serde::{Deserialize, Serialize};
 use crate::fixture::PropertyType;
-use crate::networking::connection_engine::SERVER_STATE;
+use crate::networking::connection_engine::{SessionID, SERVER_STATE};
 use crate::networking::messages::TcpServerMessage;
 use crate::networking::messages::UpdateMode::OnChange;
 
@@ -51,11 +51,33 @@ pub enum DMXConfigurationForClient {
     },
 }
 
+pub fn add_subscription(token: &SessionID, topic: &SubscribeTopic, update_mode: &UpdateMode) {
+    let mut server_state = SERVER_STATE.write().unwrap();
+    let mut user_data = server_state.get_mut(&token);
+
+    if let Some(mut user_data) = user_data {
+        user_data.subscriptions.push((topic.clone(), update_mode.clone()));
+
+        if let Some((sender, _)) = &user_data.active_connection {
+
+            let buffer = &CONTINUOUS_BUFFER.read().unwrap();
+            let payload = match topic {
+                SubscribeTopic::DMXConfiguration => {
+                    TopicPayload::DMXConfiguration(buffer.dmxconfig.clone())
+                }
+            };
+
+            sender.send(
+                TcpServerMessage::TopicUpdate { data: payload }
+            ).unwrap();
+        }
+    }
+}
+
 pub fn on_dmx_config_update(data: DMXConfigForClientState) {
 
     {
-        let mut buffer = &CONTINUOUS_BUFFER.write().unwrap().dmxconfig;
-        buffer = &data.clone();
+        CONTINUOUS_BUFFER.write().unwrap().dmxconfig = data.clone();
     }
 
     let data = TopicPayload::DMXConfiguration(data);
