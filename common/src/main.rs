@@ -3,7 +3,7 @@ use std::net::TcpStream;
 use std::thread;
 use std::env;
 use common::networking::messages::{TcpClientMessage, TcpServerMessage, UserRole, HandshakeRequest, HandshakeResponse};
-use common::networking::{SubscribeTopic, UpdateMode, TopicPayload, DMXConfigurationForClient};
+use common::networking::subscription_objects::{SubscribeTopic, UpdateMode, TopicPayload, DMXConfigurationForClient};
 
 ///startPoint - This is the main entry point of the common application.
 fn main() {

@@ -3,10 +3,10 @@ use std::fmt::Formatter;
 use std::hash::{DefaultHasher, Hash, Hasher};
 use serde::{Deserialize, Serialize};
 use crate::logging::LogLevel;
-use crate::cli::CliAction;
-use crate::networking::connection_engine::SessionID;
-pub(super) use crate::networking::subscriptions::{SubscribeTopic, UpdateMode};
-use crate::networking::subscriptions::TopicPayload;
+use crate::cli_actions::CliAction;
+use crate::networking::subscription_objects::{SubscribeTopic, UpdateMode, TopicPayload};
+
+pub type SessionID = u64;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct HandshakeRequest {

@@ -1,12 +1,14 @@
-use interface::interfaces::dmx_output_loop;
+mod cli;
+mod networking;
+
 use std::io::{self, Write};
 use std::thread;
 use std::time::Duration;
+use common::r_log;
 use common::logging::{Logger, TerminalSink, FileSink};
 use common::logging::LogLevel::*;
-use common::r_log;
-use common::cli::command_parsing::run_command;
-
+use interface::interfaces::dmx_output_loop;
+use crate::cli::command_parsing::run_command;
 
 /// Spawns the ['dmx_output_loop']-thread and then starts the main REPL.
 fn main() -> io::Result<()> {
@@ -23,7 +25,7 @@ fn main() -> io::Result<()> {
     });
 
 
-    common::networking::server_sockets::activate_socket(6767);
+    networking::activate_socket(6767);
 
 
     loop {

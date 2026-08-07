@@ -1,76 +1,45 @@
-use crate::r_log;
 use std::collections::HashMap;
-use serde::{Deserialize, Serialize};
+use crate::r_log;
+use crate::networking::on_dmx_config_update;
 use crate::cli::command_parsing::parse_debug_command;
-use crate::fixture::{ChannelIndex, ChannelValue, ChannelParameter, PropertyType, FixtureType, Fixture};
-use crate::fixture::ChannelError::{ChannelAlreadyInUse, ChannelOutOfRange, UniverseOutOfRange};
-use crate::fixture::FixtureError::{ChannelError, FixtureNameAlreadyInUse, FixtureTypeNameAlreadyInUse, InvalidFixture, InvalidFixtureType, InvalidPropertyType, MissingProperty, MultipleColorOutputTypes};
-use crate::logging::LogLevel;
-use crate::logging::LogLevel::{Error, Info, UserError, UserSuccess};
+use common::cli_actions::CliAction;
+use common::logging::LogLevel;
+use common::logging::LogLevel::{Error, Info, UserError, UserSuccess};
+use common::fixture::{ChannelIndex, ChannelValue, ChannelParameter, PropertyType, FixtureType, Fixture, get_dmx_config_for_client};
+use common::fixture::ChannelError::{ChannelAlreadyInUse, ChannelOutOfRange, UniverseOutOfRange};
+use common::fixture::FixtureError::{ChannelError, FixtureNameAlreadyInUse, FixtureTypeNameAlreadyInUse, InvalidFixture, InvalidFixtureType, InvalidPropertyType, MissingProperty, MultipleColorOutputTypes};
 
-#[derive(Serialize, Deserialize, Debug)]
-pub enum CliAction {
-    Help,
+pub fn execute_cli_action(cli_action: &CliAction) -> (LogLevel, String) {
+    match cli_action {
+        CliAction::Help => {
+            const HELP_TEXT: &str = include_str!("../../../common/help.txt");
+            (UserSuccess, HELP_TEXT.to_string())
+        },
 
-    FixtureNew {
-        name: String,
-        channels: HashMap<PropertyType, ChannelParameter>,
-    },
+        CliAction::FixtureNew { name, channels } => {
+            new_fixture_type(name.clone(), channels.clone())
+        },
 
-    FixtureAdd {
-        name: String,
-        fixture_type_name: String,
-        universe: usize,
-        channel: ChannelIndex,
-    },
+        CliAction::FixtureAdd { name, fixture_type_name, universe, channel } => {
+            new_fixture(name.clone(), fixture_type_name.clone(), *universe, *channel)
+        },
 
-    FixtureSet {
-        name: String,
-        property_type: PropertyType,
-        value: ChannelValue,
-    },
+        CliAction::FixtureSet {name, property_type, value} => {
+            set_property_value(name.clone(), property_type.clone(), *value)
+        },
 
-    FixtureGetType {
-        fixture_name: String,
-    },
+        CliAction::FixtureGetType { fixture_name } => {
+            get_fixture_type(fixture_name.clone())
+        },
 
-    OtherCommands {
-        command: String,
-    }
-}
-
-impl CliAction {
-    pub fn execute(&self) -> (LogLevel, String) {
-        match self {
-            CliAction::Help => {
-                const HELP_TEXT: &str = include_str!("../../help.txt");
-                (UserSuccess, HELP_TEXT.to_string())
-            },
-
-            CliAction::FixtureNew { name, channels } => {
-                new_fixture_type(name.clone(), channels.clone())
-            },
-
-            CliAction::FixtureAdd { name, fixture_type_name, universe, channel } => {
-                new_fixture(name.clone(), fixture_type_name.clone(), *universe, *channel)
-            },
-
-            CliAction::FixtureSet {name, property_type, value} => {
-                set_property_value(name.clone(), property_type.clone(), *value)
-            },
-
-            CliAction::FixtureGetType { fixture_name } => {
-                get_fixture_type(fixture_name.clone())
-            },
-
-            CliAction::OtherCommands {command} => {
-                parse_debug_command(command.clone())
-            }
-
-            //_ => (Error, "Not yet implemented".to_string())
+        CliAction::OtherCommands {command} => {
+            parse_debug_command(command.clone())
         }
+
+        //_ => (Error, "Not yet implemented".to_string())
     }
 }
+
 
 pub(crate) fn new_fixture_type(name: String, channels: HashMap<PropertyType, ChannelParameter>) -> (LogLevel, String) {
 
@@ -151,6 +120,8 @@ fn new_fixture(name: String, fixture_type_name: String, universe: usize, channel
         }
 
         Ok(_) => {
+            let client_state = get_dmx_config_for_client();
+            on_dmx_config_update(client_state);
             (UserSuccess,format!("{} created successfully", name))
         }
     }

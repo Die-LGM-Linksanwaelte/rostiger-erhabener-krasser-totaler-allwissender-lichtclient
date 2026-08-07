@@ -1,11 +1,10 @@
 use std::collections::HashMap;
 use std::sync::{LazyLock, RwLock};
 use std::sync::atomic::AtomicU64;
-use crate::networking::messages::{TcpServerMessage, UserRole};
 use std::sync::mpsc::Sender;
-use crate::networking::subscriptions::{SubscribeTopic, UpdateMode};
+use common::networking::messages::{TcpServerMessage, UserRole, SessionID};
+use common::networking::subscription_objects::{SubscribeTopic, UpdateMode};
 
-pub type SessionID = u64;
 
 //Always change these two to the same type, if ConnectionID is changed to u32 for example, NEXT_CONNECTION_ID must be
 // changed to AtomicU32
