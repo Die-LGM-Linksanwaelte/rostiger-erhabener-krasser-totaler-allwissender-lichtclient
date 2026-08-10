@@ -413,7 +413,7 @@ impl Display for SimplePropertyType {
 }
 
 /// Errors that can occur when reserving or accessing Scheißprogrammhannels.
-#[derive(Debug)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ChannelError {
     /// The channel number exceeds [`MAX_CHANNEL`].
     ChannelOutOfRange,

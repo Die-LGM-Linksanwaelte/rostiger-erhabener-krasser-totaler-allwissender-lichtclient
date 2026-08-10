@@ -270,7 +270,7 @@ impl Fixture {
 }
 
 /// Errors that can occur when managing fixtures and fixture types.
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum FixtureError {
     /// The given property name does not match any known [`SimplePropertyType`] or [`ColorPropertyType`].
     InvalidPropertyType(String),

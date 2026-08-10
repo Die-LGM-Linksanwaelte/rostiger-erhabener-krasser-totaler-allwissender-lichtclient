@@ -2,9 +2,10 @@ use std::collections::HashMap;
 use crate::r_log;
 use crate::networking::on_dmx_config_update;
 use crate::cli::command_parsing::parse_debug_command;
-use common::cli_actions::CliAction;
+use common::cli_actions::{CliAction, CliActionResponse};
+use common::cli_actions::CliActionResponse::{Ack, FixtureError, FixtureTypeInfo, UnsupportedCommand};
 use common::logging::LogLevel;
-use common::logging::LogLevel::{Error, Info, UserError, UserSuccess};
+use common::logging::LogLevel::{Error, Info, UserError, UserSuccess, Warning};
 use common::fixture::{ChannelIndex, ChannelValue, ChannelParameter, PropertyType, FixtureType, Fixture, get_dmx_config_for_client};
 use common::fixture::ChannelError::{ChannelAlreadyInUse, ChannelOutOfRange, UniverseOutOfRange};
 use common::fixture::FixtureError::{ChannelError, FixtureNameAlreadyInUse, FixtureTypeNameAlreadyInUse, InvalidFixture, InvalidFixtureType, InvalidPropertyType, MissingProperty, MultipleColorOutputTypes};
@@ -37,6 +38,51 @@ pub fn execute_cli_action(cli_action: &CliAction) -> (LogLevel, String) {
         }
 
         //_ => (Error, "Not yet implemented".to_string())
+    }
+}
+
+pub fn execute_implicit_cli_action(cli_action: &CliAction) -> CliActionResponse {
+    match cli_action {
+        CliAction::Help => {
+            r_log!(Warning, "A Client has sent an implicit Help-Command. Please dont let him do that.");
+            UnsupportedCommand
+        }
+
+        CliAction::FixtureNew { name, channels } => {
+            if let Err(e) = FixtureType::new(name.clone(), channels.clone()) {
+                FixtureError(e)
+            } else {
+                Ack
+            }
+        }
+
+        CliAction::FixtureAdd { name, fixture_type_name, universe, channel } => {
+            if let Err(e) = Fixture::new(fixture_type_name.clone(), *channel, *universe, name.clone()) {
+                FixtureError(e)
+            } else {
+                Ack
+            }
+        }
+
+        CliAction::FixtureSet {name, property_type, value} => {
+            if let Err(e) = Fixture::set(name.clone(), property_type.clone(), *value) {
+                FixtureError(e)
+            } else {
+                Ack
+            }
+        }
+
+        CliAction::FixtureGetType { fixture_name } => {
+            match Fixture::get_fixture_type_from_string(fixture_name.clone()) {
+                Ok(fixture_type) => FixtureTypeInfo(fixture_type),
+                Err(e) => FixtureError(e),
+            }
+        }
+
+        CliAction::OtherCommands { command } => {
+            r_log!(Warning, "A client has sent an implicit Debug-Command : {}. Please dont him do that.", command);
+            UnsupportedCommand
+        }
     }
 }
 
