@@ -1,12 +1,11 @@
 use std::fmt;
 use std::fmt::Formatter;
-use std::hash::{DefaultHasher, Hash, Hasher};
 use serde::{Deserialize, Serialize};
 use crate::logging::LogLevel;
-use crate::cli::CliAction;
-use crate::networking::connection_engine::SessionID;
-pub(super) use crate::networking::subscriptions::{SubscribeTopic, UpdateMode};
-use crate::networking::subscriptions::TopicPayload;
+use crate::cli_actions::CliAction;
+use crate::networking::subscription_objects::{SubscribeTopic, UpdateMode, TopicPayload};
+
+pub type SessionID = u64;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct HandshakeRequest {
@@ -132,7 +131,5 @@ impl fmt::Display for UserRole {
 }
 
 pub fn get_protocol_version() -> String {
-    let mut hasher = DefaultHasher::new();
-    include_bytes!("messages.rs").hash(&mut hasher);
-    hasher.finish().to_string()
+    env!("PROTOCOL_HASH").to_string()
 }

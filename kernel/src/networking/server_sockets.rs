@@ -1,16 +1,19 @@
-use crate::r_log;
 use std::io::{Read, Write};
 use std::net::{Shutdown, TcpListener, TcpStream};
-use std::{thread};
+use std::thread;
 use std::sync::atomic::Ordering;
 use std::sync::mpsc;
 use std::sync::mpsc::{Receiver,Sender};
 use rand::{RngExt};
+use common::r_log;
+use common::logging::LogLevel::*;
+use common::networking::messages::{HandshakeRequest, HandshakeResponse, SessionID, TcpClientMessage, TcpServerMessage};
+use common::networking::messages::TcpServerMessage::{CommandOutput, LogoutOk};
+use common::networking::subscription_objects::UpdateMode;
+use crate::networking::connection_engine::{ClientSession, ConnectionID, NEXT_CONNECTION_ID, SERVER_STATE};
+use crate::networking::subscriptions::add_subscription;
 use crate::cli::command_parsing::run_command;
-use crate::logging::LogLevel::*;
-use crate::networking::connection_engine::{ClientSession, ConnectionID, SessionID, NEXT_CONNECTION_ID, SERVER_STATE};
-use crate::networking::messages::{HandshakeRequest, HandshakeResponse, TcpClientMessage, TcpServerMessage, UpdateMode};
-use crate::networking::messages::TcpServerMessage::{CommandOutput, LogoutOk};
+use crate::cli::execute_cli_action;
 
 pub fn activate_socket(port: u16) {
     let address = format!("0.0.0.0:{}", port);
@@ -103,7 +106,7 @@ fn check_version_compatibility(stream: &mut TcpStream) -> Result<(), HandshakeEr
         }
     };
 
-    let mut bytes = match stream.read_exact(&mut buffer) {
+    let bytes = match stream.read_exact(&mut buffer) {
         Err(e) => {
             r_log!(Error,"[Handshake] Connection error : {}", e);
             return Err(HandshakeError::InvalidData("read_stream corrupt".to_owned()));
@@ -117,7 +120,7 @@ fn check_version_compatibility(stream: &mut TcpStream) -> Result<(), HandshakeEr
                 return Err(HandshakeError::InvalidData("Wrong magic string. Client is not an Rektal-Client".into()));
             }
 
-            let server_hash = crate::networking::messages::get_protocol_version();
+            let server_hash = common::networking::messages::get_protocol_version();
             let server_version = env!("CARGO_PKG_VERSION").to_string();
 
             if request.protocol_hash != server_hash {
@@ -374,11 +377,7 @@ fn handle_messages(msg: TcpClientMessage, connection_id: ConnectionID, token: Se
 
 
         TcpClientMessage::Subscribe {topic, update_mode} => {
-            let mut server_state = SERVER_STATE.write().unwrap();
-            let mut user_data = server_state.get_mut(&token);
-            if let Some(user_data) = user_data {
-                user_data.subscriptions.push((topic.clone(), update_mode.clone()));
-            }
+            add_subscription(&token, &topic, &update_mode);
             r_log!(Info,"[Conn {}] {}", connection_id, match update_mode {
                 UpdateMode::OnChange => format!("Der Client will über Änderungen von {} erfahren!", topic),
                 UpdateMode::Continuous => format!("Der Client will über {} auf dem laufenden gehalten werden", topic),
@@ -401,7 +400,7 @@ fn handle_messages(msg: TcpClientMessage, connection_id: ConnectionID, token: Se
         }
 
         TcpClientMessage::ExecuteImplicitCommand { command, response_id} => {
-            let answer = command.execute();
+            let answer = execute_cli_action(&command);
             r_log!(answer.0, "{}", answer.1);
             Some(CommandOutput {
                 answer,

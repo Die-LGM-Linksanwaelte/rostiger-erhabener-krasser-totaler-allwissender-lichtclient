@@ -1,19 +1,17 @@
-use crate::r_log;
 use std::fmt;
 use std::fmt::{Display, Formatter};
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 use arrayvec::ArrayVec;
 use serde::{Deserialize, Serialize};
 use crate::fixture::{
-    ensure_universes_size, ChannelIndex, ChannelValue, Fixture, FixtureError, DMX_CONFIGURATION, FIXTURE_LIST,
+    ChannelIndex, ChannelValue, Fixture, FixtureError, DMX_CONFIGURATION, FIXTURE_LIST,
     MAX_CHANNEL, MAX_FINE_DEGREES
 };
 use crate::fixture::channel::ChannelReservation::{Pending, Reserved};
 use crate::fixture::color::{Color, ColorPropertyType};
 use crate::logging::LogLevel::*;
-use crate::networking::{DMXConfigurationForClient, on_dmx_config_update};
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
-
+use crate::networking::subscription_objects::{DMXConfigForClientState, DMXConfigurationForClient};
 
 /// Represents the reservation state of a single Scheißprogrammhannel.
 ///
@@ -291,7 +289,7 @@ impl ChannelParameter {
             return Err(ChannelError::FineDegreeOutOfRange(fine_degree));
         }
 
-        let required_len = fine_degree  as usize;
+        let required_len = fine_degree;
 
         if self.channel.len() == required_len {
             self.channel.push(fine_index);
@@ -318,9 +316,9 @@ impl ChannelParameter {
     }
 }
 
-pub(crate) fn send_dmx_config_update() {
+pub fn get_dmx_config_for_client() -> DMXConfigForClientState{
     let dmx_config = DMX_CONFIGURATION.read().unwrap();
-    let dmx_conf_for_client: Vec<Vec<DMXConfigurationForClient>> = dmx_config.iter().map(|universe| {
+    dmx_config.iter().map(|universe| {
         universe.iter().map(|channel| {
             match channel {
                 Reserved(fixture, property, fine_degree) => {
@@ -350,9 +348,7 @@ pub(crate) fn send_dmx_config_update() {
                 _ => DMXConfigurationForClient::Empty,
             }
         }).collect()
-    }).collect();
-
-    on_dmx_config_update(dmx_conf_for_client);
+    }).collect()
 }
 
 impl SimplePropertyType {

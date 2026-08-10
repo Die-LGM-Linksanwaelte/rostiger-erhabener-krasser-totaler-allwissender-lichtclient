@@ -1,30 +1,29 @@
 use std::collections::HashMap;
 use std::fs::read;
 use std::str::{FromStr, SplitAsciiWhitespace};
-use crate::logging::LogLevel;
-use crate::logging::LogLevel::*;
-use crate::{fixture, r_log};
-use crate::fixture::ChannelError::{
+use common::logging::LogLevel;
+use common::logging::LogLevel::*;
+use common::{fixture, r_log};
+use common::fixture::ChannelError::{
     ChannelAlreadyInUse, ChannelOutOfRange, UniverseOutOfRange, FineDegreeTooHigh, FineDegreeExists,
     FineDegreeOutOfRange
 };
-use crate::fixture::FixtureError::{
+use common::fixture::FixtureError::{
     ChannelError, FixtureNameAlreadyInUse, FixtureTypeNameAlreadyInUse, InvalidFixture,
     InvalidFixtureType, InvalidPropertyType, MissingProperty, MultipleColorOutputTypes,
 };
-use crate::fixture::{
+use common::fixture::{
     ChannelIndex, ChannelValue, ChannelParameter, Fixture, FixtureType, PropertyType, MAX_FINE_DEGREES,
     FloatChannelValue
 };
-use crate::fixture::color::ColorPropertyType;
-use crate::cli::cli_actions;
-use crate::cli::cli_actions::CliAction;
-use crate::cli::cli_actions::CliAction::{FixtureAdd, FixtureGetType, FixtureSet, OtherCommands};
-
+use common::fixture::color::ColorPropertyType;
+use crate::cli::cli_executing;
+use common::cli_actions::CliAction;
+use crate::cli::cli_executing::execute_cli_action;
 
 pub fn run_command(command: String) -> (LogLevel, String) {
     match parse_cli_string(command) {
-        Ok(command) => command.execute(),
+        Ok(command) => execute_cli_action(&command),
         Err(e) => (UserError, e.to_string())
     }
 }
@@ -71,7 +70,7 @@ pub(crate) fn parse_cli_string(command_string: String) -> Result<CliAction,Strin
 
         Some(command) => {
             let args = line_iter.collect::<Vec<_>>().join(" ");
-            Ok(OtherCommands {
+            Ok(CliAction::OtherCommands {
                 command: format!("{} {}",command,args)
             })
         }
@@ -102,7 +101,7 @@ pub fn parse_debug_command(line: String) -> (LogLevel, String) {
                 channels,
             };
 
-            if let (UserError,error) = new_command.execute() {
+            if let (UserError,error) = execute_cli_action(&new_command) {
                 return (UserError,error.to_string());
             }
             for i in 0..50 {
@@ -116,7 +115,7 @@ pub fn parse_debug_command(line: String) -> (LogLevel, String) {
                     channel: start_channel
                 };
 
-                match add_command.execute() {
+                match execute_cli_action(&add_command) {
                     (UserSuccess, _) => continue,
                     x => return x
                 }
@@ -149,7 +148,7 @@ pub fn parse_debug_command(line: String) -> (LogLevel, String) {
                     value,
                 };
 
-                match set_command.execute() {
+                match execute_cli_action(&set_command) {
                     (UserSuccess, _) => continue,
                     x => return x
                 }
@@ -271,7 +270,7 @@ fn parse_new_fixture(mut args: SplitAsciiWhitespace) -> Result<CliAction,String>
         }
     };
 
-    Ok(FixtureAdd {
+    Ok(CliAction::FixtureAdd {
         name,
         fixture_type_name,
         channel,
@@ -294,7 +293,7 @@ fn parse_set_value(mut args: SplitAsciiWhitespace) -> Result<CliAction,String> {
 
     let value = parse_cli_value(&*value)?;
 
-    Ok(FixtureSet {
+    Ok(CliAction::FixtureSet {
         name,
         property_type,
         value,
@@ -304,7 +303,7 @@ fn parse_set_value(mut args: SplitAsciiWhitespace) -> Result<CliAction,String> {
 fn parse_get_type(mut args: SplitAsciiWhitespace) -> Result<CliAction,String> {
     let fixture_name = args.next().unwrap().to_string();
 
-    Ok(FixtureGetType {
+    Ok(CliAction::FixtureGetType {
         fixture_name,
     })
 }

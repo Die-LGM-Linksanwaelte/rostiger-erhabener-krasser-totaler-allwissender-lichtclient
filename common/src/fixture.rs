@@ -2,17 +2,16 @@
 pub mod color;
 pub mod channel;
 mod fixture_type;
-pub(crate) use channel::{ChannelParameter, PropertyType, ChannelError};
-pub(crate) use fixture_type::FixtureType;
+pub use channel::{ChannelParameter, PropertyType, ChannelError, get_dmx_config_for_client};
+pub use fixture_type::FixtureType;
 
+use std::sync::{LazyLock, RwLock};
+use std::collections::{HashMap};
+use serde::{Deserialize, Serialize};
 use color::{Color, ColorPropertyType};
 use crate::fixture::channel::ChannelReservation::{Empty};
 use crate::fixture::FixtureError::{InvalidFixture, InvalidFixtureType};
-use std::collections::{HashMap};
-use std::fmt::{Display};
-use std::sync::{LazyLock, RwLock};
-use serde::{Deserialize, Serialize};
-use crate::fixture::channel::{send_dmx_config_update, Channel, ChannelReservation, SimplePropertyType};
+use crate::fixture::channel::{Channel, ChannelReservation, SimplePropertyType};
 
 pub type ChannelValue = u32;
 pub static MAX_FINE_DEGREES :usize = 4;
@@ -180,8 +179,6 @@ impl Fixture {
                 color.reserve_final(&*name, universe);
             }
         }
-
-        send_dmx_config_update();
 
         return_value
     }

@@ -2001,8 +2001,10 @@ dependencies = [
 name = "kernel"
 version = "0.1.1"
 dependencies = [
+ "bincode",
  "common",
  "interface",
+ "rand",
 ]
 
 [[package]]

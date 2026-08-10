@@ -3,8 +3,7 @@ use std::net::TcpStream;
 use std::thread;
 use std::env;
 use common::networking::messages::{TcpClientMessage, TcpServerMessage, UserRole, HandshakeRequest, HandshakeResponse};
-use common::networking::{SubscribeTopic, UpdateMode};
-use common::r_log;
+use common::networking::subscription_objects::{SubscribeTopic, UpdateMode, TopicPayload, DMXConfigurationForClient};
 
 ///startPoint - This is the main entry point of the common application.
 fn main() {
@@ -147,6 +146,30 @@ fn main() {
                                 }
                                 TcpServerMessage::CommandOutput{answer: result, ..} => {
                                     println!("[{}] {}", result.0, result.1);
+                                }
+                                
+                                TcpServerMessage::TopicUpdate {data} => {
+                                    match data {
+                                        TopicPayload::DMXConfiguration(config) => {
+                                            println!("\n\x1b[33m[System] Configuration updated\x1b[0m");
+                                            for universe in config {
+                                                for channel in universe {
+                                                    match channel {
+                                                        DMXConfigurationForClient::Empty => print!("."),
+                                                        DMXConfigurationForClient::Reserved {
+                                                            fixture_name, property_type,
+                                                            fine_degree, fixture_type_hash: _
+                                                        } => {
+                                                            print!("|{}:{}:{}|",
+                                                                   fixture_name, property_type, fine_degree
+                                                            );
+                                                        }
+                                                    }
+                                                }
+                                                println!();
+                                            }
+                                        }
+                                    }
                                 }
                                 _ => {}
                             }
