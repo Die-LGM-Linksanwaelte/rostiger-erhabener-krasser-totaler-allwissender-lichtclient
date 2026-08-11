@@ -22,3 +22,6 @@ rektal/target
 #.idea/
 target/
 /interface/src/main.rs
+
+# Out Own
+rektal/
