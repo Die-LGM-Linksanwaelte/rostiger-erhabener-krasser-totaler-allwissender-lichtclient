@@ -44,7 +44,7 @@ pub(crate) fn parse_cli_string(command_string: String) -> Result<CliAction,Strin
             their channels.".to_string())
         }
 
-        Some("add") if arg_count == 4 => {
+        Some("add") if arg_count == 3 => {
             parse_new_fixture(line_iter)
         }
 
@@ -253,22 +253,7 @@ fn parse_new_fixture_type(mut args: SplitAsciiWhitespace) -> Result<CliAction,St
 fn parse_new_fixture(mut args: SplitAsciiWhitespace) -> Result<CliAction,String> {
     let name = args.next().unwrap().to_string();
     let fixture_type_name = args.next().unwrap().to_string();
-    let universe = args.next().unwrap().to_string();
-    let channel = args.next().unwrap().to_string();
-
-    let universe = match universe.parse::<usize>() {
-        Ok(universe) => universe,
-        Err(_) => {
-            return Err(format!("Error: \"{universe}\" is not a valid universe-number"))
-        }
-    };
-
-    let channel = match channel.parse::<ChannelIndex>() {
-        Ok(channel) => channel,
-        Err(_) => {
-            return Err(format!("Error: \"{channel}\" is not a valid channel-number"))
-        }
-    };
+    let (universe, channel) = parse_universe_and_channel(args)?;
 
     Ok(CliAction::FixtureAdd {
         name,
@@ -348,4 +333,24 @@ fn parse_cli_value(input: &str) -> Result<ChannelValue,String> {
         input_str.parse::<ChannelValue>()
             .map_err(|_| format!("Invalid value {}. ", input_str))
     }
+}
+
+
+fn parse_universe_and_channel(mut args: SplitAsciiWhitespace) -> Result<(usize, ChannelIndex),String> {
+    let parsed_string = args.next().unwrap();
+    let (universe, channel) = parsed_string.split_once(".").unwrap();
+    let universe = match universe.parse::<usize>() {
+        Ok(universe) => universe,
+        Err(_) => {
+            return Err(format!("Error: \"{universe}\" is not a valid universe-number"))
+        }
+    };
+
+    let channel = match channel.parse::<ChannelIndex>() {
+        Ok(channel) => channel,
+        Err(_) => {
+            return Err(format!("Error: \"{channel}\" is not a valid channel-number"))
+        }
+    };
+    Ok((universe, channel))
 }
