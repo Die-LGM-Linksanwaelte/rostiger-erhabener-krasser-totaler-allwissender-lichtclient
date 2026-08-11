@@ -164,7 +164,13 @@ fn read_thread(stream: &mut TcpStream, connection_id: ConnectionID, tx_channel: 
             },
             Err(e) => {
                 if e.kind() == std::io::ErrorKind::UnexpectedEof {
-                    r_log!(SuccessEvent,"[Conn {}] Client disconnected successfully", connection_id);
+                    if token.is_none() {
+                        r_log!(SuccessEvent,"[Conn {}] Client disconnected successfully", connection_id);
+                    } else {
+                        r_log!(Error, "[Conn {}] Client disconnected without logging out. Session is still active",
+                            connection_id
+                        );
+                    }
                 } else {
                     r_log!(Error, "[Conn {}] Length of read-stream-error: {}", connection_id, e);
                 }
