@@ -21,9 +21,9 @@ use crate::cli::cli_executing;
 use common::cli_actions::CliAction;
 use crate::cli::cli_executing::execute_cli_action;
 
-pub fn run_command(command: String) -> (LogLevel, String) {
+pub fn run_command(is_kernel: bool, command: String) -> (LogLevel, String) {
     match parse_cli_string(command) {
-        Ok(command) => execute_cli_action(&command),
+        Ok(command) => execute_cli_action(is_kernel, &command),
         Err(e) => (UserError, e.to_string())
     }
 }
@@ -68,6 +68,14 @@ pub(crate) fn parse_cli_string(command_string: String) -> Result<CliAction,Strin
             Err("Error: \"type\" needs a fixture as argument".to_string())
         }
 
+        Some("exit") if arg_count <= 1 => {
+            parse_exit(line_iter)
+        },
+
+        Some("exit") => {
+            Err("Error: \"exit\" accepts at most one optional argument ('save' or 'discard').".to_string())
+        },
+
         Some(command) => {
             let args = line_iter.collect::<Vec<_>>().join(" ");
             Ok(CliAction::OtherCommands {
@@ -101,7 +109,7 @@ pub fn parse_debug_command(line: String) -> (LogLevel, String) {
                 channels,
             };
 
-            if let (UserError,error) = execute_cli_action(&new_command) {
+            if let (UserError,error) = execute_cli_action(false,&new_command) {
                 return (UserError,error.to_string());
             }
             for i in 0..50 {
@@ -115,7 +123,7 @@ pub fn parse_debug_command(line: String) -> (LogLevel, String) {
                     channel: start_channel
                 };
 
-                match execute_cli_action(&add_command) {
+                match execute_cli_action(false, &add_command) {
                     (UserSuccess, _) => continue,
                     x => return x
                 }
@@ -148,7 +156,7 @@ pub fn parse_debug_command(line: String) -> (LogLevel, String) {
                     value,
                 };
 
-                match execute_cli_action(&set_command) {
+                match execute_cli_action(false, &set_command) {
                     (UserSuccess, _) => continue,
                     x => return x
                 }
@@ -332,6 +340,16 @@ fn parse_cli_value(input: &str) -> Result<ChannelValue,String> {
     } else {
         input_str.parse::<ChannelValue>()
             .map_err(|_| format!("Invalid value {}. ", input_str))
+    }
+}
+
+
+fn parse_exit(mut args: SplitAsciiWhitespace) -> Result<CliAction,String> {
+    match args.next() {
+        Some("save") => Ok(CliAction::Exit { save_changes: Some(true) }),
+        Some("discard") => Ok(CliAction::Exit { save_changes: Some(false) }),
+        Some(invalid) => Err(format!("Error: Invalid argument '{}' for exit. Use 'save' or 'discard'.", invalid)),
+        None => Ok(CliAction::Exit { save_changes: None }),
     }
 }
 

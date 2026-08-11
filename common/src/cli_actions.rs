@@ -29,6 +29,10 @@ pub enum CliAction {
         fixture_name: String,
     },
 
+    Exit {
+        save_changes: Option<bool>,
+    },
+
     OtherCommands {
         command: String,
     }
@@ -60,6 +64,8 @@ impl Display for CliAction {
                 write!(f, "set {} {} {}", name, property_type, value),
             CliAction::FixtureGetType {fixture_name} =>
                 write!(f, "type {}", fixture_name),
+            CliAction::Exit {save_changes} =>
+                write!(f, "exit {:?}", save_changes),
             CliAction::OtherCommands {command} =>
                 write!(f, "{}", command),
         }

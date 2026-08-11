@@ -176,7 +176,10 @@ fn main() {
                                         }
                                     }
                                 }
-                                _ => {}
+                                other_msg => {
+                                    println!("[Server] Darstellung der Server-Message noch nicht implementiert.\
+                                     Versuche es trotzdem: {:?}", other_msg);
+                                }
                             }
 
                             // Zeigt den Prompt danach wieder an

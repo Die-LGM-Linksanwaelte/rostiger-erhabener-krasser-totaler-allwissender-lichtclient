@@ -4,3 +4,4 @@ mod subscriptions;
 
 pub(crate) use server_sockets::activate_socket;
 pub(crate) use subscriptions::on_dmx_config_update;
+pub(crate) use connection_engine::announce_shutdown;

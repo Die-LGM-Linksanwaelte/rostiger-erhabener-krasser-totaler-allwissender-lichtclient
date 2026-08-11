@@ -103,6 +103,8 @@ pub enum TcpServerMessage {
         resource: EditableResource,
         reason: String
     },
+
+    ShutdownAnnouncement,
 }
 
 

@@ -5,7 +5,7 @@ use std::io::{self, Write};
 use std::thread;
 use std::time::Duration;
 use common::r_log;
-use common::logging::{Logger, TerminalSink, FileSink};
+use common::logging::{Logger, TerminalSink, FileSink, LogLevel};
 use common::logging::LogLevel::*;
 use interface::interfaces::dmx_output_loop;
 use crate::cli::command_parsing::run_command;
@@ -19,6 +19,14 @@ fn main() -> io::Result<()> {
 
     Logger::global().add_sink(Box::new(TerminalSink {cli_prompt: Some("> ".into())}));
     Logger::global().add_sink(Box::new(FileSink::new("/tmp/kernel.log")));
+
+    ctrlc::set_handler(move || {
+        // Wir nutzen brav unser Makro und loggen streng auf Englisch!
+        r_log!(
+            Warning,
+            "Ctrl+C is disabled to prevent data loss. Please type 'exit' to shutdown safely."
+        );
+    }).expect("Error setting Ctrl-C handler");
 
     let _artnet_handle = thread::spawn(|| {
         dmx_output_loop().expect("\x1b[31martnet loop failed\x1b[0m");
@@ -38,7 +46,7 @@ fn main() -> io::Result<()> {
 
         let input = input.trim().to_string();
 
-        let response = run_command(input);
+        let response = run_command(true, input);
 
         r_log!(response.0, "{}", response.1);
     }

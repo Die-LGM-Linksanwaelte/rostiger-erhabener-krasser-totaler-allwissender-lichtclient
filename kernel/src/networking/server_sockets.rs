@@ -399,7 +399,7 @@ fn handle_messages(msg: TcpClientMessage, connection_id: ConnectionID, token: Se
         }
 
         TcpClientMessage::ExecuteCommand{ command, response_id} => {
-            let answer = run_command(command);
+            let answer = run_command(false, command);
             r_log!(answer.0, "{}", answer.1);
             Some(CommandOutput{
                 answer,

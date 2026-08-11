@@ -1,6 +1,8 @@
 use std::collections::HashMap;
+use std::io;
+use std::io::Write;
 use crate::r_log;
-use crate::networking::on_dmx_config_update;
+use crate::networking::{announce_shutdown, on_dmx_config_update};
 use crate::cli::command_parsing::parse_debug_command;
 use common::cli_actions::{CliAction, CliActionResponse};
 use common::cli_actions::CliActionResponse::{Ack, FixtureError, FixtureTypeInfo, UnsupportedCommand};
@@ -10,7 +12,7 @@ use common::fixture::{ChannelIndex, ChannelValue, ChannelParameter, PropertyType
 use common::fixture::ChannelError::{ChannelAlreadyInUse, ChannelOutOfRange, UniverseOutOfRange};
 use common::fixture::FixtureError::{ChannelError, FixtureNameAlreadyInUse, FixtureTypeNameAlreadyInUse, InvalidFixture, InvalidFixtureType, InvalidPropertyType, MissingProperty, MultipleColorOutputTypes};
 
-pub fn execute_cli_action(cli_action: &CliAction) -> (LogLevel, String) {
+pub fn execute_cli_action(is_kernel: bool, cli_action: &CliAction) -> (LogLevel, String) {
     match cli_action {
         CliAction::Help => {
             const HELP_TEXT: &str = include_str!("../../../common/help.txt");
@@ -33,9 +35,20 @@ pub fn execute_cli_action(cli_action: &CliAction) -> (LogLevel, String) {
             get_fixture_type(fixture_name.clone())
         },
 
+        CliAction::Exit {save_changes} => {
+            if !is_kernel {
+                (UserError, "Only kernel can exit a session".to_string())
+            } else {
+                shutdown_kernel(save_changes);
+                (Info, "Shutdown aborted".to_string())
+                //If the programm exits the previous methode, the shutdown is aborted.
+            }
+
+        },
+
         CliAction::OtherCommands {command} => {
             parse_debug_command(command.clone())
-        }
+        },
 
         //_ => (Error, "Not yet implemented".to_string())
     }
@@ -77,6 +90,11 @@ pub fn execute_implicit_cli_action(cli_action: &CliAction) -> CliActionResponse 
                 Ok(fixture_type) => FixtureTypeInfo(fixture_type),
                 Err(e) => FixtureError(e),
             }
+        }
+
+        CliAction::Exit {..} => {
+            r_log!(Warning, "{}", "A client has sent an implicit Exit-Command. Only kernel can exit a session");
+            UnsupportedCommand
         }
 
         CliAction::OtherCommands { command } => {
@@ -211,5 +229,52 @@ fn get_fixture_type(fixture_name: String) -> (LogLevel, String) {
             (UserError,format!("Error: \"{fixture}\" is not a valid Fixture")),
         Err(_) =>
             panic!("Error: get_fixture_type_from_string() threw an Error it shouldn't"),
+    }
+}
+
+fn shutdown_kernel(save_changes: &Option<bool>) {
+    r_log!(Info,"Shutting down Kernel");
+
+    let (should_exit, save_changes) = match save_changes {
+        Some(save_changes) => (true, *save_changes),
+        None => {
+            let stdout = io::stdout();
+            let mut handle = stdout.lock();
+
+            write!(handle, "\r\x1B[2K").unwrap();
+            write!(handle, "\x1b[33m[System] Do you want to save before exiting?\n\
+            (1) Save and exit (Warning: Not yet implemented. Its impossible to save right now)\n\
+            (2) Discard and exit\n\
+            (0) Cancel\n>\
+            \x1b[0m").unwrap();
+
+            handle.flush().unwrap();
+
+            let mut exit_choice = String::new();
+            io::stdin().read_line(&mut exit_choice).unwrap();
+            match exit_choice.trim() {
+                "1" => (true, true),
+                "2" => (true, false),
+                _ => {
+                    writeln!(handle, "\x1b[32m[System] Exit canceled. Resuming kernel...\x1b[0m").unwrap();
+                    (false, false)
+                }
+            }
+        }
+    };
+
+    if should_exit {
+        if save_changes {
+            r_log!(Warning, "Couldnt save changes ... not yet implemented");
+        } else {
+            r_log!(Warning, "Exiting without saving changes");
+        }
+
+        announce_shutdown();
+
+        // Let in "lock-que" waiting logging-messages get to their turn, and the TCP have his last Fun.
+        std::thread::sleep(std::time::Duration::from_millis(500));
+
+        std::process::exit(0);
     }
 }
