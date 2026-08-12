@@ -1,7 +1,9 @@
 use crate::network::udp_client::MAX_CHANNEL;
-pub use common::fixture::channel::{PropertyType};
+pub use common::fixture::channel::PropertyType;
+use common::networking::subscription_objects::{
+    DMXConfigForClientState, DMXConfigurationForClient,
+};
 use eframe::egui;
-use common::networking::{DMXConfigForClientState, DMXConfigurationForClient};
 
 #[derive(Clone)]
 pub struct UniversePanel {
@@ -102,6 +104,7 @@ impl UniversePanel {
         }
     }
 
+    ///
     fn draw_dmx_cell_pane(&mut self, ui: &mut egui::Ui) {
         let spacing = 4.0;
         let frame_extra = 6.0;
@@ -119,7 +122,8 @@ impl UniversePanel {
         let stretched_pure_cell_width = stretched_full_cell_width - frame_extra;
 
         let total_rows = (MAX_CHANNEL + num_columns - 1) / num_columns;
-        let row_height = self.cell_height + spacing;        let mut cell_responses = vec![None; MAX_CHANNEL];
+        let row_height = self.cell_height + spacing;
+        let mut cell_responses = vec![None; MAX_CHANNEL];
 
         egui::ScrollArea::vertical()
             .id_source(format!("dmx_scroll_{}", self.tab_id))
@@ -137,9 +141,14 @@ impl UniversePanel {
                             for col in 0..num_columns {
                                 let i = row * num_columns + col;
                                 if i < MAX_CHANNEL {
-                                    let dmx_config = self.device_configuration.as_ref()
-                                        .and_then(|config| config.get(self.selected_universe as usize - 1))
-                                        .map(|universe| universe[i].clone())
+                                    let dmx_config = self
+                                        .device_configuration
+                                        .as_ref()
+                                        .and_then(|config| {
+                                            config.get(self.selected_universe as usize - 1)
+                                        })
+                                        .and_then(|universe| universe.get(i))
+                                        .cloned()
                                         .unwrap_or(DMXConfigurationForClient::Empty);
 
                                     let resp = self.draw_dmx_cell(
@@ -165,24 +174,27 @@ impl UniversePanel {
 
                 // Draw device overlays inside the ScrollArea so they scroll with the content
                 if self.show_device_properties {
-                    if let Some(universe_config) = self.device_configuration.as_ref()
+                    if let Some(universe_config) = self
+                        .device_configuration
+                        .as_ref()
                         .and_then(|config| config.get(self.selected_universe as usize - 1))
                     {
                         let mut i = 0;
                         while i < MAX_CHANNEL {
-                            if let DMXConfigurationForClient::Reserved {
+                            let entry = universe_config.get(i);
+                            if let Some(DMXConfigurationForClient::Reserved {
                                 fixture_type_hash,
                                 fixture_name,
                                 ..
-                            } = &universe_config[i]
+                            }) = entry
                             {
                                 let start = i;
                                 let mut end = i;
                                 while end + 1 < MAX_CHANNEL {
-                                    if let DMXConfigurationForClient::Reserved {
+                                    if let Some(DMXConfigurationForClient::Reserved {
                                         fixture_name: next_name,
                                         ..
-                                    } = &universe_config[end + 1]
+                                    }) = universe_config.get(end + 1)
                                     {
                                         if next_name == fixture_name {
                                             end += 1;
@@ -207,28 +219,34 @@ impl UniversePanel {
                             }
                         }
                     }
-                }
 
-                // Detect which device is currently hovered
-                let mut hovered_device_name = None;
-                if let Some(universe_config) = self.device_configuration.as_ref()
-                    .and_then(|config| config.get(self.selected_universe as usize - 1))
-                {
-                    for (i, resp_opt) in cell_responses.iter().enumerate() {
-                        if let Some(resp) = resp_opt {
-                            if resp.hovered() {
-                                if let DMXConfigurationForClient::Reserved { fixture_name, .. } = &universe_config[i] {
-                                    hovered_device_name = Some(fixture_name.clone());
-                                    break;
+                    // Detect which device is currently hovered
+                    let mut hovered_device_name = None;
+                    if let Some(universe_config) = self
+                        .device_configuration
+                        .as_ref()
+                        .and_then(|config| config.get(self.selected_universe as usize - 1))
+                    {
+                        for (i, resp_opt) in cell_responses.iter().enumerate() {
+                            if let Some(resp) = resp_opt {
+                                if resp.hovered() {
+                                    if let Some(DMXConfigurationForClient::Reserved {
+                                        fixture_name,
+                                        ..
+                                    }) = universe_config.get(i)
+                                    {
+                                        hovered_device_name = Some(fixture_name.clone());
+                                        break;
+                                    }
                                 }
                             }
                         }
                     }
-                }
-                
-                if self.hovered_device != hovered_device_name {
-                    self.hovered_device = hovered_device_name;
-                    ui.ctx().request_repaint();
+
+                    if self.hovered_device != hovered_device_name {
+                        self.hovered_device = hovered_device_name;
+                        ui.ctx().request_repaint();
+                    }
                 }
             });
     }
@@ -269,7 +287,7 @@ impl UniversePanel {
                 let bar_height = 28.0;
                 let bar_rect = egui::Rect::from_min_max(
                     egui::pos2(rect.left(), rect.top() + 13.0),
-                    egui::pos2(rect.right(), rect.top() + 13.0 + bar_height)
+                    egui::pos2(rect.right(), rect.top() + 13.0 + bar_height),
                 );
 
                 // Highlight background and stroke if this device is hovered
@@ -310,7 +328,14 @@ impl UniversePanel {
     }
 
     ///function that draws a single DMX-Channel-Cell
-    fn draw_dmx_cell(&mut self, ui: &mut egui::Ui, channel_num: usize, dmx_config: DMXConfigurationForClient, val: u8, width: f32) -> egui::Response {
+    fn draw_dmx_cell(
+        &mut self,
+        ui: &mut egui::Ui,
+        channel_num: usize,
+        dmx_config: DMXConfigurationForClient,
+        val: u8,
+        width: f32,
+    ) -> egui::Response {
         let is_hovered_device = if let Some(ref hovered) = self.hovered_device {
             if let DMXConfigurationForClient::Reserved { fixture_name, .. } = &dmx_config {
                 fixture_name == hovered
@@ -350,7 +375,7 @@ impl UniversePanel {
                                 .weak(),
                         );
                     });
-                    
+
                     // Lays out the remaining elements from the bottom up to align them to the bottom
                     ui.with_layout(egui::Layout::bottom_up(egui::Align::Center), |ui| {
                         ui.label(

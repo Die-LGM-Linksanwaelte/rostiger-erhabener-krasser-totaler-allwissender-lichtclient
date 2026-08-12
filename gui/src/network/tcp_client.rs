@@ -1,4 +1,4 @@
-use crate::network::connection_state::ConnectionState;
+use crate::network::connection_state::{ConnectionState, SessionState};
 use common::logging::LogLevel::{Error, Info, SuccessEvent};
 use common::networking::messages::{
     HandshakeRequest, HandshakeResponse, TcpClientMessage, TcpServerMessage,
@@ -9,6 +9,7 @@ use std::io::{Read, Write};
 use std::net::{Shutdown, TcpStream};
 use std::sync::mpsc::{Receiver, Sender};
 use std::thread;
+use crate::controller::UiEvent;
 
 pub(crate) struct TcpClient {
     target: String,
@@ -110,14 +111,15 @@ impl TcpClient {
                 r_log!(SuccessEvent, "Version {} verified!", client_version);
                 Self::set_connection_state(ConnectionState::Connected);
             }
-            HandshakeResponse::Mismatch { server_version } => {
+            HandshakeResponse::Mismatch { server_version } => 'block: {
                 r_log!(
                     Error,
                     "Version mismatch! this client has the version {}. Kernel has the version {}",
                     client_version,
                     server_version
                 );
-                std::process::exit(1);
+                Self::set_connection_state(ConnectionState::Error);
+                return;
             }
         }
 
@@ -142,31 +144,28 @@ impl TcpClient {
     fn listen_tcp(mut read_stream: TcpStream, tcp_sender: Sender<TcpServerMessage>) {
         loop {
             let mut len_buf = [0u8; 4];
-            match read_stream.read_exact(&mut len_buf) {
+            let mut response_buffer = match read_stream.read_exact(&mut len_buf) {
                 Ok(_) => {
                     let msg_len = u32::from_be_bytes(len_buf) as usize;
-                    let mut response_buffer = vec![0u8; msg_len];
+                    vec![0u8; msg_len]
+                }
+                Err(e) => {
+                    r_log!(Error,"[Read-stream] Len-Error: {}", e);
+                    break;
+                }
+            };
 
-                    match read_stream.read_exact(&mut response_buffer){
-                        Ok(_) => {
-                            match bincode::deserialize::<TcpServerMessage>(&response_buffer) {
-                                Ok(kernel_msg) => {
-                                    if let Err(e) = tcp_sender.send(kernel_msg) {
-                                        r_log!(Error, "Error sending TcpServerMessage: {}", e);
-                                    }
-                                }
-                                Err(e) => {
-                                    r_log!(Error, "Error deserializing TcpServerMessage: {}", e);
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            r_log!(Error, "Error reading from TcpStream: {}", e);
-                            Self::set_connection_state(ConnectionState::Error);
-                            break;
+            match read_stream.read_exact(&mut response_buffer) {
+                Ok(_) => match bincode::deserialize::<TcpServerMessage>(&response_buffer) {
+                    Ok(kernel_msg) => {
+                        if let Err(e) = tcp_sender.send(kernel_msg) {
+                            r_log!(Error, "Error sending TcpServerMessage: {}", e);
                         }
                     }
-                }
+                    Err(e) => {
+                        r_log!(Error, "Error deserializing TcpServerMessage: {}", e);
+                    }
+                },
                 Err(e) => {
                     r_log!(Error, "Error reading from TcpStream: {}", e);
                     Self::set_connection_state(ConnectionState::Error);
@@ -183,11 +182,25 @@ impl TcpClient {
                 Ok(payload) => {
                     let len = payload.len() as u32;
                     if let Err(e) = write_stream.write_all(&len.to_be_bytes()) {
-                        r_log!(Error, "Got error while sending length prefix: {} Stopped write-Thread", e);
+                        r_log!(
+                            Error,
+                            "Got error while sending length prefix: {} Stopped write-Thread",
+                            e
+                        );
+                        send_ui_event(UiEvent::SetConnectionState {
+                            state: ConnectionState::Disconnected
+                        });
                         break;
                     }
                     if let Err(e) = write_stream.write_all(&payload) {
-                        r_log!(Error, "Got error while sending to Server: {} Stopped write-Thread", e);
+                        r_log!(
+                            Error,
+                            "Got error while sending to Server: {} Stopped write-Thread",
+                            e
+                        );
+                        send_ui_event(UiEvent::SetConnectionState {
+                            state: ConnectionState::Disconnected
+                        });
                         break;
                     }
                 }
@@ -200,5 +213,13 @@ impl TcpClient {
         //Thread the Ripper, we kill the read-thread with us
         let _ = write_stream.shutdown(Shutdown::Both);
         //r_log!(Info,"The Write-Thread {} is dead! Long live the Write-Thread!", connection_id);
+    }
+}
+
+fn send_ui_event(event: UiEvent) {
+    if let Ok(guard) = crate::UI_EVENT_SENDER.read() {
+        if let Some(sender) = guard.as_ref() {
+            let _ = sender.send(event);
+        }
     }
 }

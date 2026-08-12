@@ -23,6 +23,7 @@ pub struct TerminalPanel {
     position_in_history: usize,
     settings_open: bool,
     settings_text: String,
+    pub(crate) is_active: bool,
 }
 
 impl TerminalPanel {
@@ -38,6 +39,7 @@ impl TerminalPanel {
             position_in_history: 0,
             settings_open: false,
             settings_text: String::new(),
+            is_active: false,
         }
     }
 
@@ -131,7 +133,8 @@ impl TerminalPanel {
                     ui.label("> ");
                     let response = ui.add(
                         egui::TextEdit::singleline(&mut self.input_text)
-                            .desired_width(f32::INFINITY),
+                            .desired_width(f32::INFINITY)
+                            .interactive(self.is_active),
                     );
 
                     if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {

@@ -4,33 +4,50 @@ use common::networking::messages::UserRole;
 use common::networking::messages::{TcpClientMessage, TcpServerMessage};
 use common::r_log;
 use eframe::egui;
+
 use egui_dock::{DockArea, DockState, TabViewer};
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{mpsc, LazyLock, RwLock};
-use common::networking::SubscribeTopic::DMXConfiguration;
-
-mod controller;
-mod network;
-mod panels;
-
+use common::networking::subscription_objects::SubscribeTopic::DMXConfiguration;
 use crate::controller::UiEvent;
 use crate::network::udp_client;
 use crate::network::udp_client::MAX_CHANNEL;
 use network::connection_state::{ConnectionState, SessionState};
 use network::tcp_client::TcpClient;
 use panels::Tab;
+mod controller;
+mod network;
+mod panels;
 
 pub static UI_EVENT_SENDER: LazyLock<RwLock<Option<Sender<UiEvent>>>> =
     LazyLock::new(|| RwLock::new(None));
 
 fn main() -> eframe::Result<()> {
-    Logger::global().add_sink(Box::new(FileSink::new("/tmp/rektal_gui.log")));
+    let log_path = std::env::temp_dir().join("rektal_gui.log");
+    Logger::global().add_sink(Box::new(FileSink::new(log_path.to_str().unwrap_or("/tmp/rektal_gui.log"))));
     Logger::global().add_sink(Box::new(TerminalSink { cli_prompt: None }));
+
+
+    // Icon zur Compile-Zeit einbetten → kein Dateizugriff zur Laufzeit nötig
+    let icon = {
+        let image = img_crate::load_from_memory(include_bytes!("../assets/rektal-logo-without-title-32px.png"))
+            .expect("Icon konnte nicht geladen werden")
+            .into_rgba8();
+        let width = image.width();
+        let height = image.height();
+        egui::viewport::IconData {
+            rgba: image.into_raw(),
+            width,
+            height,
+        }
+    };
 
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([1024.0, 768.0])
-            .with_title("R.E.K.T.A.L."),
+            .with_title("R.E.K.T.A.L.")
+            .with_app_id("rektal")
+            .with_icon(std::sync::Arc::new(icon)),
         ..Default::default()
     };
     r_log!(Info, "eframe initialized");
@@ -299,9 +316,6 @@ impl MyApp {
                     }
 
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::TOP), |ui| {
-                        if ui.button("Close").clicked() {
-                            request_close = true;
-                        }
                         if ui.button("Login").clicked() {
                             self.username = self.draft_username.clone();
                             self.role = self.draft_role.clone();
@@ -317,6 +331,9 @@ impl MyApp {
                                 request_close = true;
                             }
                             self.password.clear();
+                        }
+                        if ui.button("Close").clicked() {
+                            request_close = true;
                         }
                     });
                 });
@@ -350,7 +367,6 @@ impl MyApp {
                     ui.label("Logged out");
                 }
 
-                // Rest rechtsbündig ausrichten
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.label(format!(
                         "R.E.K.T.A.L. Version: {}",
@@ -368,13 +384,13 @@ impl eframe::App for MyApp {
         controller::handle_incoming_network_data(
             &mut self.tcp_listen_receiver,
             &mut self.tree,
-            &mut self.session_state,
         );
         controller::handle_events(
             &self.ui_event_receiver,
             &self.tcp_write_sender,
             &mut self.connection_state,
             &mut self.session_state,
+            &mut self.tree,
         );
 
         self.draw_top_bar(ctx);
