@@ -10,6 +10,7 @@ use common::r_log;
 use eframe::egui::Color32;
 use egui_dock::DockState;
 use std::sync::mpsc::{Receiver, Sender};
+use crate::network::connection_state::SessionState::{LoggedIn, LoggedOut, LoginFailed};
 
 pub(crate) fn handle_dmx_data(
     dmx_receiver: &Receiver<(u8, [u8; MAX_CHANNEL])>,
@@ -59,20 +60,26 @@ pub(crate) fn handle_incoming_network_data(
                 }
                 TcpServerMessage::LoginOk { token } => {
                     r_log!(UserSuccess, "Login Successful! Token: {}", token);
-                    send_ui_event(UiEvent::SetSessionState {
-                        state: SessionState::LoggedIn,
+                    send_ui_event(UiEvent::SetConnectionState {
+                        state: ConnectionState::Connected{
+                            session_state: LoggedIn,
+                        },
                     });
                 }
                 TcpServerMessage::LoginFailed { reason } => {
                     r_log!(UserError, "Login Failed: {}", reason);
-                    send_ui_event(UiEvent::SetSessionState {
-                        state: SessionState::LoginFailed(reason),
+                    send_ui_event(UiEvent::SetConnectionState {
+                        state: ConnectionState::Connected{
+                            session_state: LoginFailed(reason),
+                        },
                     });
                 }
                 TcpServerMessage::LogoutOk => {
                     r_log!(UserSuccess, "Logout Successful");
-                    send_ui_event(UiEvent::SetSessionState {
-                        state: SessionState::LoggedOut,
+                    send_ui_event(UiEvent::SetConnectionState {
+                        state: ConnectionState::Connected{
+                            session_state: LoggedOut,
+                        },
                     });
                 }
                 TcpServerMessage::TopicUpdate { data } => {
@@ -130,7 +137,6 @@ pub(crate) fn handle_events(
     ui_receiver: &Receiver<UiEvent>,
     tcp_sender: &Option<Sender<TcpClientMessage>>,
     connection_state: &mut ConnectionState,
-    session_state: &mut SessionState,
     tree: &mut DockState<Tab>,
 ) {
     while let Ok(event) = ui_receiver.try_recv() {
@@ -165,7 +171,9 @@ pub(crate) fn handle_events(
                     if let Err(e) = tcp_sender.send(msg) {
                         r_log!(Error, "Failed to send login request: {}", e);
                     } else {
-                        *session_state = SessionState::LoginPending;
+                        *connection_state = ConnectionState::Connected {
+                            session_state: SessionState::LoginPending,
+                        };
                     }
                 } else {
                     r_log!(
@@ -176,7 +184,6 @@ pub(crate) fn handle_events(
             }
             UiEvent::SetConnectionState { state } => {
                 if state == ConnectionState::Error {
-                    *session_state = SessionState::LoggedOut;
                     for (_, tab) in tree.iter_all_tabs_mut() {
                         if let Tab::Terminal(panel) = tab {
                             panel.is_active = false;
@@ -186,10 +193,7 @@ pub(crate) fn handle_events(
                             }]);
                         }
                     }
-                }
-
-                if state == ConnectionState::Disconnected {
-                    *session_state = SessionState::LoggedOut;
+                } else if state == ConnectionState::Disconnected {
                     for (_, tab) in tree.iter_all_tabs_mut() {
                         if let Tab::Terminal(panel) = tab {
                             panel.is_active = false;
@@ -228,7 +232,9 @@ pub(crate) fn handle_events(
                     }
                     SessionState::LoginPending => {}
                 }
-                *session_state = state;
+                *connection_state = ConnectionState::Connected {
+                    session_state: state,
+                };
             }
             UiEvent::LogoutRequest => {
                 let msg = TcpClientMessage::Logout;

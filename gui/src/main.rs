@@ -15,6 +15,8 @@ use crate::network::udp_client::MAX_CHANNEL;
 use network::connection_state::{ConnectionState, SessionState};
 use network::tcp_client::TcpClient;
 use panels::Tab;
+use crate::network::connection_state::ConnectionState::Connected;
+
 mod controller;
 mod network;
 mod panels;
@@ -86,8 +88,6 @@ pub struct MyApp {
     tcp_write_sender: Option<Sender<TcpClientMessage>>,
     /// The current state of the TCP network connection.
     connection_state: ConnectionState,
-    /// The current state of the user session (login status).
-    session_state: SessionState,
     /// The currently active role of the user.
     role: UserRole,
     /// The password used during the login request (cleared from memory after use).
@@ -127,7 +127,6 @@ impl MyApp {
             ui_event_receiver,
             tcp_write_sender: None,
             connection_state: ConnectionState::Disconnected,
-            session_state: SessionState::LoggedOut,
             role: UserRole::Programmer,
             password: String::new(),
             draft_username: String::new(),
@@ -146,7 +145,7 @@ impl MyApp {
                     }
                     if ui
                         .add_enabled(
-                            matches!(self.connection_state, ConnectionState::Connected),
+                            matches!(self.connection_state, ConnectionState::Connected { .. }),
                             egui::Button::new("Session Settings"),
                         )
                         .clicked()
@@ -159,7 +158,12 @@ impl MyApp {
                     }
                     if ui
                         .add_enabled(
-                            matches!(self.session_state, SessionState::LoggedIn),
+                            matches!(
+                                self.connection_state,
+                                ConnectionState::Connected {
+                                    session_state: SessionState::LoggedIn
+                                }
+                            ),
                             egui::Button::new("Logout"),
                         )
                         .clicked()
@@ -307,7 +311,10 @@ impl MyApp {
                         });
                     ui.add_space(10.0);
 
-                    if let SessionState::LoginFailed(ref reason) = self.session_state {
+                    if let ConnectionState::Connected {
+                        session_state: SessionState::LoginFailed(ref reason),
+                    } = self.connection_state
+                    {
                         ui.label(
                             egui::RichText::new(format!("Login fehlgeschlagen: {}", reason))
                                 .color(egui::Color32::RED),
@@ -348,10 +355,10 @@ impl MyApp {
     fn draw_bottom_bar(&mut self, ctx: &egui::Context) {
         egui::TopBottomPanel::bottom("bottom_bar").show(ctx, |ui| {
             ui.horizontal(|ui| {
-                let status_color = match self.connection_state {
+                let status_color = match &self.connection_state {
                     ConnectionState::Disconnected | ConnectionState::Error => egui::Color32::RED,
                     ConnectionState::ConnectionPending => egui::Color32::YELLOW,
-                    ConnectionState::Connected => match self.session_state {
+                    Connected { session_state } => match session_state {
                         SessionState::LoginFailed(_) => egui::Color32::YELLOW,
                         SessionState::LoggedIn => egui::Color32::GREEN,
                         SessionState::LoginPending | SessionState::LoggedOut => {
@@ -361,7 +368,10 @@ impl MyApp {
                 };
                 let (rect, _) = ui.allocate_exact_size(egui::vec2(8.0, 8.0), egui::Sense::hover());
                 ui.painter().circle_filled(rect.center(), 4.0, status_color);
-                if let SessionState::LoggedIn = self.session_state {
+                if let ConnectionState::Connected {
+                    session_state: SessionState::LoggedIn,
+                } = self.connection_state
+                {
                     ui.label(format!("{} | {}", self.username, self.role.to_string()));
                 } else {
                     ui.label("Logged out");
@@ -389,7 +399,6 @@ impl eframe::App for MyApp {
             &self.ui_event_receiver,
             &self.tcp_write_sender,
             &mut self.connection_state,
-            &mut self.session_state,
             &mut self.tree,
         );
 

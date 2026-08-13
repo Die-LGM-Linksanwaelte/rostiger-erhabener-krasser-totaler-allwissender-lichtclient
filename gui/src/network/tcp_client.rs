@@ -109,9 +109,11 @@ impl TcpClient {
         match res {
             HandshakeResponse::Ok => {
                 r_log!(SuccessEvent, "Version {} verified!", client_version);
-                Self::set_connection_state(ConnectionState::Connected);
+                Self::set_connection_state(ConnectionState::Connected {
+                    session_state: SessionState::LoggedOut,
+                });
             }
-            HandshakeResponse::Mismatch { server_version } => 'block: {
+            HandshakeResponse::Mismatch { server_version } => {
                 r_log!(
                     Error,
                     "Version mismatch! this client has the version {}. Kernel has the version {}",

@@ -1,7 +1,9 @@
 ///enum to describe the connection state of the user
 #[derive(PartialEq, Debug, Clone)]
 pub enum ConnectionState {
-    Connected,
+    Connected {
+        session_state: SessionState,
+    },
     Disconnected,
     Error,
     ConnectionPending,
