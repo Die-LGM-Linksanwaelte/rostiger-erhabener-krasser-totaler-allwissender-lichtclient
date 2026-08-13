@@ -1,7 +1,8 @@
 use crate::artnet::ArtnetInterface;
-use common::fixture::{MAX_CHANNEL, calculate_dmx_values};
+use common::fixture::{MAX_CHANNEL, calculate_dmx_values, Fixture};
 use std::io;
 use std::net::UdpSocket;
+use std::sync::mpsc::Receiver;
 use std::thread::sleep;
 use std::time::{Duration, Instant};
 use common::logging::LogLevel::*;
@@ -30,7 +31,7 @@ pub trait DmxInterface {
 /// Initiates the interfaces, then calculates the DMX-values and outputs them to the interfaces. For now, this function
 /// outputs the DMX-values all to artnet, but this should later be changed to allow all interfaces, that implement the
 /// trait ['DmxInterface']. TODO
-pub fn dmx_output_loop() -> io::Result<()> {
+pub fn dmx_output_loop(data_receiver :Receiver<(usize,Vec<Fixture>)>) -> io::Result<()> {
     let socket = UdpSocket::bind("0.0.0.0:0")?;
     socket.set_broadcast(true)?;
 
@@ -39,10 +40,19 @@ pub fn dmx_output_loop() -> io::Result<()> {
 
     r_log!(Info,"Starting artnet");
 
+    let mut universe_count: usize = 0;
+    let mut fixtures: Vec<Fixture> = vec![];
+
     loop {
         let start = Instant::now();
 
-        let universes = calculate_dmx_values();
+        while let Ok((new_count, new_fixtures)) = data_receiver.try_recv() {
+            universe_count = new_count;
+            fixtures = new_fixtures;
+        }
+
+
+        let universes = calculate_dmx_values(universe_count, &fixtures);
 
         for (universe_index, data) in universes.iter().enumerate() {
             artnet_interface.send_universe(universe_index as u16, data)?;

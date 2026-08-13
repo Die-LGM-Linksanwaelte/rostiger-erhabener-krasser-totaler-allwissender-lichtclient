@@ -1,11 +1,12 @@
 mod cli;
 mod networking;
+mod fixture;
 
 use std::io::{self, Write};
 use std::thread;
 use std::time::Duration;
 use common::r_log;
-use common::logging::{Logger, TerminalSink, FileSink, LogLevel};
+use common::logging::{FileSink, Logger, TerminalSink};
 use common::logging::LogLevel::*;
 use interface::interfaces::dmx_output_loop;
 use crate::cli::command_parsing::run_command;
@@ -28,8 +29,10 @@ fn main() -> io::Result<()> {
         );
     }).expect("Error setting Ctrl-C handler");
 
+    let interface_receiver = fixture::FixtureEngine::spawn().expect("Failed to spawn FixtureEngine");
+
     let _artnet_handle = thread::spawn(|| {
-        dmx_output_loop().expect("\x1b[31martnet loop failed\x1b[0m");
+        dmx_output_loop(interface_receiver).expect("\x1b[31martnet loop failed\x1b[0m");
     });
 
 
@@ -40,9 +43,11 @@ fn main() -> io::Result<()> {
         io::stdout().flush()?;
 
         let mut input = String::new();
-        io::stdin()
-            .read_line(&mut input)
-            .expect("Failed to read line");
+        if let Err(e) = io::stdin().read_line(&mut input) {
+            r_log!(UserError, "Terminal input stream contained invalid UTF-8 (e.g. from deleting special characters).\
+             Discarding input. Error: {}", e);
+            continue;
+        }
 
         let input = input.trim().to_string();
 

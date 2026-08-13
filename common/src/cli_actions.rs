@@ -19,6 +19,16 @@ pub enum CliAction {
         channel: ChannelIndex,
     },
 
+    FixtureMove {
+        fixture_name: String,
+        new_universe: usize,
+        new_channel: ChannelIndex,
+    },
+
+    FixtureRemove {
+        fixture_name: String,
+    },
+
     FixtureSet {
         name: String,
         property_type: PropertyType,
@@ -60,6 +70,10 @@ impl Display for CliAction {
                 write!(f, "new {} {:?}", name, channels),
             CliAction::FixtureAdd { name, fixture_type_name, universe, channel } =>
                 write!(f, "add {} {} {} {}", name, fixture_type_name, universe, channel),
+            CliAction::FixtureMove { fixture_name, new_universe, new_channel } =>
+                write!(f, "move {} {} {}", fixture_name, new_universe, new_channel),
+            CliAction::FixtureRemove { fixture_name } =>
+                write!(f, "remove {}", fixture_name),
             CliAction::FixtureSet { name, property_type, value } =>
                 write!(f, "set {} {} {}", name, property_type, value),
             CliAction::FixtureGetType {fixture_name} =>
