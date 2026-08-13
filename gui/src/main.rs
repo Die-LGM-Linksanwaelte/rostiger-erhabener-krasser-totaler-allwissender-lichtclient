@@ -145,7 +145,7 @@ impl MyApp {
                     }
                     if ui
                         .add_enabled(
-                            matches!(self.connection_state, ConnectionState::Connected { .. }),
+                            matches!(self.connection_state, Connected { .. }),
                             egui::Button::new("Session Settings"),
                         )
                         .clicked()
@@ -160,7 +160,7 @@ impl MyApp {
                         .add_enabled(
                             matches!(
                                 self.connection_state,
-                                ConnectionState::Connected {
+                                Connected {
                                     session_state: SessionState::LoggedIn
                                 }
                             ),
@@ -275,10 +275,10 @@ impl MyApp {
                         .show(ui, |ui| {
                             ui.label("Username ");
                             ui.text_edit_singleline(&mut self.draft_username);
-                            ui.end_row(); // <-- Das hat gefehlt! Dadurch wird eine neue Zeile gestartet.
+                            ui.end_row();
 
                             ui.label("Role");
-                            egui::ComboBox::from_id_source("role_combo") // from_id_source statt from_label verhindert doppelte Labels im Grid
+                            egui::ComboBox::from_id_source("role_combo")
                                 .selected_text(match self.draft_role {
                                     UserRole::Programmer => "Programmer",
                                     UserRole::BlindProgrammer => "Programmer Blind",
@@ -311,7 +311,7 @@ impl MyApp {
                         });
                     ui.add_space(10.0);
 
-                    if let ConnectionState::Connected {
+                    if let Connected {
                         session_state: SessionState::LoginFailed(ref reason),
                     } = self.connection_state
                     {
@@ -368,7 +368,7 @@ impl MyApp {
                 };
                 let (rect, _) = ui.allocate_exact_size(egui::vec2(8.0, 8.0), egui::Sense::hover());
                 ui.painter().circle_filled(rect.center(), 4.0, status_color);
-                if let ConnectionState::Connected {
+                if let Connected {
                     session_state: SessionState::LoggedIn,
                 } = self.connection_state
                 {

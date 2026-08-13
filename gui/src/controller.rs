@@ -27,7 +27,7 @@ pub(crate) fn handle_dmx_data(
     }
 }
 
-fn send_ui_event(event: UiEvent) {
+pub fn send_ui_event(event: UiEvent) {
     if let Ok(guard) = crate::UI_EVENT_SENDER.read() {
         if let Some(sender) = guard.as_ref() {
             let _ = sender.send(event);

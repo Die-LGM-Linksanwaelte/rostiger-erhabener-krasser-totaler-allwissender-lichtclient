@@ -9,7 +9,7 @@ use std::io::{Read, Write};
 use std::net::{Shutdown, TcpStream};
 use std::sync::mpsc::{Receiver, Sender};
 use std::thread;
-use crate::controller::UiEvent;
+use crate::controller::{send_ui_event, UiEvent};
 
 pub(crate) struct TcpClient {
     target: String,
@@ -34,7 +34,7 @@ impl TcpClient {
     ///sets the connection state by sending it to the controller
     fn set_connection_state(state: ConnectionState) {
         if let Some(sender) = crate::UI_EVENT_SENDER.read().unwrap().as_ref() {
-            let _ = sender.send(crate::controller::UiEvent::SetConnectionState { state });
+            let _ = sender.send(UiEvent::SetConnectionState { state });
         }
     }
 
@@ -215,13 +215,5 @@ impl TcpClient {
         //Thread the Ripper, we kill the read-thread with us
         let _ = write_stream.shutdown(Shutdown::Both);
         //r_log!(Info,"The Write-Thread {} is dead! Long live the Write-Thread!", connection_id);
-    }
-}
-
-fn send_ui_event(event: UiEvent) {
-    if let Ok(guard) = crate::UI_EVENT_SENDER.read() {
-        if let Some(sender) = guard.as_ref() {
-            let _ = sender.send(event);
-        }
     }
 }
