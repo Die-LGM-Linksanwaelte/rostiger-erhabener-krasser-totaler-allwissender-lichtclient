@@ -222,9 +222,7 @@ impl Color {
     /// # Errors
     ///
     /// Returns a [`ChannelError`] if any channel could not be created or reserved.
-    pub fn new(
-        color_type: &ColorType, device_channel: u16, universe: usize, fixture_name: &str
-    ) -> Result<Self, ChannelError> {
+    pub fn new(color_type: &ColorType, device_channel: u16) -> Result<Self, ChannelError> {
         let default_value = if color_type.output_type == Some(CMY) {
             ChannelValue::MAX
         } else if let Some(_) = color_type.output_type {
@@ -247,18 +245,6 @@ impl Color {
         let output_type = color_type.output_type.unwrap();
 
 
-
-        if let Some(color) = &color1 {
-            color.reserve_pending(fixture_name, universe)?;
-        }
-        if let Some(color) = &color2 {
-            color.reserve_pending(fixture_name, universe)?;
-        }
-        if let Some(color) = &color3 {
-            color.reserve_pending(fixture_name, universe)?;
-        }
-
-
         Ok(Self {
             output_type,
             color1,
@@ -277,21 +263,45 @@ impl Color {
         })
     }
 
-    pub fn reserve_final(&self, fixture_name: &str, universe: usize) {
-        if let Some(color) = &self.color1 {
-            let property = PropertyType::Color(ColorPropertyType::new(1, self.output_type).unwrap());
-            color.reserve_final(fixture_name, universe, property);
-        }
-        if let Some(color) = &self.color2 {
-            let property = PropertyType::Color(ColorPropertyType::new(2, self.output_type).unwrap());
-            color.reserve_final(fixture_name, universe, property);
-        }
-        if let Some(color) = &self.color3 {
-            let property = PropertyType::Color(ColorPropertyType::new(3, self.output_type).unwrap());
-            color.reserve_final(fixture_name, universe, property);
-        }
+    pub(crate) fn get_channels_as_iter(&self) -> impl Iterator<Item = (PropertyType, &Channel)> {
+        let c1 = self.color1.as_ref().map(|c| (
+            PropertyType::Color(ColorPropertyType::new(1, self.output_type).unwrap()),
+            c
+        ));
+
+        let c2 = self.color2.as_ref().map(|c| (
+            PropertyType::Color(ColorPropertyType::new(2, self.output_type).unwrap()),
+            c
+        ));
+
+        let c3 = self.color3.as_ref().map(|c| (
+            PropertyType::Color(ColorPropertyType::new(3, self.output_type).unwrap()),
+            c
+        ));
+
+        vec![c1, c2, c3].into_iter().flatten()
     }
-    
+
+    pub fn get_channels_as_iter_mut(&mut self) -> impl Iterator<Item = (PropertyType, &mut Channel)> {
+        let c1 = self.color1.as_mut().map(|c| (
+            PropertyType::Color(ColorPropertyType::new(1, self.output_type).unwrap()),
+            c
+        ));
+
+        let c2 = self.color2.as_mut().map(|c| (
+            PropertyType::Color(ColorPropertyType::new(2, self.output_type).unwrap()),
+            c
+        ));
+
+        let c3 = self.color3.as_mut().map(|c| (
+            PropertyType::Color(ColorPropertyType::new(3, self.output_type).unwrap()),
+            c
+        ));
+
+        vec![c1, c2, c3].into_iter().flatten()
+    }
+
+
     fn set_color(&mut self) {
         let (v1, v2, v3) = match self.output_type {
             RGB => (self.red, self.green, self.blue),

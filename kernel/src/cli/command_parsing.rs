@@ -1,29 +1,20 @@
 use std::collections::HashMap;
-use std::fs::read;
-use std::str::{FromStr, SplitAsciiWhitespace};
+use std::str::SplitAsciiWhitespace;
 use common::logging::LogLevel;
 use common::logging::LogLevel::*;
-use common::{fixture, r_log};
-use common::fixture::ChannelError::{
-    ChannelAlreadyInUse, ChannelOutOfRange, UniverseOutOfRange, FineDegreeTooHigh, FineDegreeExists,
-    FineDegreeOutOfRange
-};
-use common::fixture::FixtureError::{
-    ChannelError, FixtureNameAlreadyInUse, FixtureTypeNameAlreadyInUse, InvalidFixture,
-    InvalidFixtureType, InvalidPropertyType, MissingProperty, MultipleColorOutputTypes,
-};
+use common::fixture::ChannelError::{FineDegreeTooHigh, FineDegreeExists, FineDegreeOutOfRange};
+use common::fixture::FixtureError::InvalidPropertyType;
 use common::fixture::{
-    ChannelIndex, ChannelValue, ChannelParameter, Fixture, FixtureType, PropertyType, MAX_FINE_DEGREES,
+    ChannelIndex, ChannelValue, ChannelParameter, PropertyType, MAX_FINE_DEGREES,
     FloatChannelValue
 };
 use common::fixture::color::ColorPropertyType;
-use crate::cli::cli_executing;
 use common::cli_actions::CliAction;
 use crate::cli::cli_executing::execute_cli_action;
 
-pub fn run_command(command: String) -> (LogLevel, String) {
+pub fn run_command(is_kernel: bool, command: String) -> (LogLevel, String) {
     match parse_cli_string(command) {
-        Ok(command) => execute_cli_action(&command),
+        Ok(command) => execute_cli_action(is_kernel, &command),
         Err(e) => (UserError, e.to_string())
     }
 }
@@ -44,12 +35,30 @@ pub(crate) fn parse_cli_string(command_string: String) -> Result<CliAction,Strin
             their channels.".to_string())
         }
 
-        Some("add") if arg_count == 4 => {
+        Some("add") if arg_count == 3 => {
             parse_new_fixture(line_iter)
         }
 
         Some("add") => {
-            Err("Error: \"add\" needs a name, a fixture-type, a start-channel and a universe as arguments".to_string())
+            Err("Error: \"add\" needs a name, a fixture-type and a start-channel (including a start-universe) as \
+            arguments".to_string())
+        }
+
+        Some("move") if arg_count == 2 => {
+            parse_move_fixture(line_iter)
+        }
+
+        Some("move") => {
+            Err("Error: \"move\" needs a fixture and a start-channel (including a start-universe) as \
+            arguments".to_string())
+        }
+
+        Some("remove") if arg_count == 1 => {
+            parse_remove_fixture(line_iter)
+        }
+
+        Some("remove") => {
+            Err("Error: \"remove\" needs a fixture as argument".to_string())
         }
 
         Some("set") if arg_count == 3 => {
@@ -67,6 +76,14 @@ pub(crate) fn parse_cli_string(command_string: String) -> Result<CliAction,Strin
         Some("type") => {
             Err("Error: \"type\" needs a fixture as argument".to_string())
         }
+
+        Some("exit") if arg_count <= 1 => {
+            parse_exit(line_iter)
+        },
+
+        Some("exit") => {
+            Err("Error: \"exit\" accepts at most one optional argument ('save' or 'discard').".to_string())
+        },
 
         Some(command) => {
             let args = line_iter.collect::<Vec<_>>().join(" ");
@@ -101,7 +118,7 @@ pub fn parse_debug_command(line: String) -> (LogLevel, String) {
                 channels,
             };
 
-            if let (UserError,error) = execute_cli_action(&new_command) {
+            if let (UserError,error) = execute_cli_action(false,&new_command) {
                 return (UserError,error.to_string());
             }
             for i in 0..50 {
@@ -115,7 +132,7 @@ pub fn parse_debug_command(line: String) -> (LogLevel, String) {
                     channel: start_channel
                 };
 
-                match execute_cli_action(&add_command) {
+                match execute_cli_action(false, &add_command) {
                     (UserSuccess, _) => continue,
                     x => return x
                 }
@@ -148,7 +165,7 @@ pub fn parse_debug_command(line: String) -> (LogLevel, String) {
                     value,
                 };
 
-                match execute_cli_action(&set_command) {
+                match execute_cli_action(false, &set_command) {
                     (UserSuccess, _) => continue,
                     x => return x
                 }
@@ -158,8 +175,6 @@ pub fn parse_debug_command(line: String) -> (LogLevel, String) {
         }
 
         Some("break") if cfg!(all(debug_assertions, not(test))) => {
-            let _dmx_config = fixture::DMX_CONFIGURATION.read().unwrap();
-            let _universes = fixture::calculate_dmx_values();
             (Info,"Add a breakpoint at this point in the code to check the datastructures".to_string())
         }
 
@@ -198,13 +213,7 @@ fn parse_new_fixture_type(mut args: SplitAsciiWhitespace) -> Result<CliAction,St
                 }
             };
 
-            let property_type = match PropertyType::from_str(property_name) {
-                Ok(property_type) => property_type,
-                Err(InvalidPropertyType(property_type)) => {
-                    return Err(format!("Error: \"{property_type}\" is not a valid PropertyType"))
-                }
-                Err(_) => unreachable!() //All possible Errors have been handles
-            };
+            let property_type = parse_property_type(property_name)?;
 
             match properties.get_mut(&property_type) {
                 Some(channel_object) => {
@@ -228,13 +237,7 @@ fn parse_new_fixture_type(mut args: SplitAsciiWhitespace) -> Result<CliAction,St
         } else {
             //Non-fine channels
 
-            let property_type = match PropertyType::from_str(property_name) {
-                Ok(property_type) => property_type,
-                Err(InvalidPropertyType(property_type)) => {
-                    return Err(format!("Error: \"{property_type}\" is not a valid PropertyType"))
-                }
-                Err(_) => unreachable!() //All possible Errors have been handles
-            };
+            let property_type = parse_property_type(property_name)?;
 
             if !properties.contains_key(&property_type) {
                 properties.insert(property_type, ChannelParameter::new(channel_index));
@@ -253,28 +256,33 @@ fn parse_new_fixture_type(mut args: SplitAsciiWhitespace) -> Result<CliAction,St
 fn parse_new_fixture(mut args: SplitAsciiWhitespace) -> Result<CliAction,String> {
     let name = args.next().unwrap().to_string();
     let fixture_type_name = args.next().unwrap().to_string();
-    let universe = args.next().unwrap().to_string();
-    let channel = args.next().unwrap().to_string();
-
-    let universe = match universe.parse::<usize>() {
-        Ok(universe) => universe,
-        Err(_) => {
-            return Err(format!("Error: \"{universe}\" is not a valid universe-number"))
-        }
-    };
-
-    let channel = match channel.parse::<ChannelIndex>() {
-        Ok(channel) => channel,
-        Err(_) => {
-            return Err(format!("Error: \"{channel}\" is not a valid channel-number"))
-        }
-    };
+    let (universe, channel) = parse_universe_and_channel(args)?;
 
     Ok(CliAction::FixtureAdd {
         name,
         fixture_type_name,
         channel,
         universe,
+    })
+}
+
+
+fn parse_move_fixture(mut args: SplitAsciiWhitespace) -> Result<CliAction, String> {
+    let fixture_name = args.next().unwrap().to_string();
+    let (new_universe, new_channel) = parse_universe_and_channel(args)?;
+
+    Ok(CliAction::FixtureMove {
+        fixture_name,
+        new_channel,
+        new_universe
+    })
+}
+
+fn parse_remove_fixture(mut args: SplitAsciiWhitespace) -> Result<CliAction, String> {
+    let fixture_name = args.next().unwrap().to_string();
+
+    Ok(CliAction::FixtureRemove {
+        fixture_name
     })
 }
 
@@ -348,4 +356,46 @@ fn parse_cli_value(input: &str) -> Result<ChannelValue,String> {
         input_str.parse::<ChannelValue>()
             .map_err(|_| format!("Invalid value {}. ", input_str))
     }
+}
+
+
+fn parse_exit(mut args: SplitAsciiWhitespace) -> Result<CliAction,String> {
+    match args.next() {
+        Some("save") => Ok(CliAction::Exit { save_changes: Some(true) }),
+        Some("discard") => Ok(CliAction::Exit { save_changes: Some(false) }),
+        Some(invalid) => Err(format!("Error: Invalid argument '{}' for exit. Use 'save' or 'discard'.", invalid)),
+        None => Ok(CliAction::Exit { save_changes: None }),
+    }
+}
+
+
+fn parse_universe_and_channel(mut args: SplitAsciiWhitespace) -> Result<(usize, ChannelIndex),String> {
+    let parsed_string = args.next().unwrap();
+    let (universe, channel) = parsed_string.split_once(".").unwrap();
+    let universe = match universe.parse::<usize>() {
+        Ok(universe) => universe,
+        Err(_) => {
+            return Err(format!("Error: \"{universe}\" is not a valid universe-number"))
+        }
+    };
+
+    let channel = match channel.parse::<ChannelIndex>() {
+        Ok(channel) => channel,
+        Err(_) => {
+            return Err(format!("Error: \"{channel}\" is not a valid channel-number"))
+        }
+    };
+    Ok((universe, channel))
+}
+
+
+
+fn parse_property_type(property_name: &str) -> Result<PropertyType, String> {
+    Ok(match PropertyType::from_str(property_name) {
+        Ok(property_type) => property_type,
+        Err(InvalidPropertyType(property_type)) => {
+            return Err(format!("Error: \"{property_type}\" is not a valid PropertyType"))
+        }
+        Err(_) => unreachable!() //All possible Errors have been handles
+    })
 }

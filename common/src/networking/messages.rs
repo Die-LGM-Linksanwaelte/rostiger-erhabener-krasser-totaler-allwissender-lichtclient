@@ -2,7 +2,7 @@ use std::fmt;
 use std::fmt::Formatter;
 use serde::{Deserialize, Serialize};
 use crate::logging::LogLevel;
-use crate::cli_actions::CliAction;
+use crate::cli_actions::{CliAction, CliActionResponse};
 use crate::networking::subscription_objects::{SubscribeTopic, UpdateMode, TopicPayload};
 
 pub type SessionID = u64;
@@ -84,6 +84,11 @@ pub enum TcpServerMessage {
         answer: (LogLevel, String),
         response_id: u32
     },
+    
+    ImplicitCommandOutput {
+        answer: CliActionResponse,
+        response_id: u32
+    },
 
     TopicUpdate {
         data: TopicPayload,
@@ -98,6 +103,8 @@ pub enum TcpServerMessage {
         resource: EditableResource,
         reason: String
     },
+
+    ShutdownAnnouncement,
 }
 
 

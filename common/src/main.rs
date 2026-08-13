@@ -1,5 +1,5 @@
 use std::io::{self, Read, Write};
-use std::net::TcpStream;
+use std::net::{Shutdown, TcpStream};
 use std::thread;
 use std::env;
 use common::networking::messages::{TcpClientMessage, TcpServerMessage, UserRole, HandshakeRequest, HandshakeResponse};
@@ -105,6 +105,11 @@ fn main() {
                     vec![0u8; msg_len]
                 },
                 Err(e) => {
+                    if e.kind() == io::ErrorKind::UnexpectedEof {
+                        println!("Server wurde beendet");
+                        read_stream.shutdown(Shutdown::Both).expect("Shutdown failed");
+                        std::process::exit(0);
+                    }
                     println!("[Read-stream] Len-Error: {}", e);
                     break;
                 }
@@ -147,7 +152,7 @@ fn main() {
                                 TcpServerMessage::CommandOutput{answer: result, ..} => {
                                     println!("[{}] {}", result.0, result.1);
                                 }
-                                
+
                                 TcpServerMessage::TopicUpdate {data} => {
                                     match data {
                                         TopicPayload::DMXConfiguration(config) => {
@@ -171,7 +176,10 @@ fn main() {
                                         }
                                     }
                                 }
-                                _ => {}
+                                other_msg => {
+                                    println!("[Server] Darstellung der Server-Message noch nicht implementiert.\
+                                     Versuche es trotzdem: {:?}", other_msg);
+                                }
                             }
 
                             // Zeigt den Prompt danach wieder an

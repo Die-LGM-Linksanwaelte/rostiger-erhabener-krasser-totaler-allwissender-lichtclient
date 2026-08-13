@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use serde::{Deserialize, Serialize};
 use crate::fixture::color::ColorType;
-use crate::fixture::{ChannelError, Fixture, FixtureError, FIXTURE_LIST, MAX_CHANNEL};
+use crate::fixture::{ChannelError, FixtureError, FIXTURE_TYPE_LIST, MAX_CHANNEL};
 use crate::fixture::channel::{ChannelParameter, PropertyType, SimplePropertyType};
 
 /// A template defining the Scheißprogrammhannel layout for a type of lighting fixture.
@@ -77,8 +77,8 @@ impl FixtureType {
             name: name.clone(),
         };
 
-        let mut list = FIXTURE_LIST.write().unwrap();
-        match list.fixture_types.entry(name.clone()) {
+        let mut list = FIXTURE_TYPE_LIST.write().unwrap();
+        match list.entry(name.clone()) {
             std::collections::hash_map::Entry::Occupied(_) => {
                 Err(FixtureError::FixtureTypeNameAlreadyInUse(name))
             }

@@ -8,12 +8,12 @@ use rand::{RngExt};
 use common::r_log;
 use common::logging::LogLevel::*;
 use common::networking::messages::{HandshakeRequest, HandshakeResponse, SessionID, TcpClientMessage, TcpServerMessage};
-use common::networking::messages::TcpServerMessage::{CommandOutput, LogoutOk};
+use common::networking::messages::TcpServerMessage::{CommandOutput, ImplicitCommandOutput, LogoutOk};
 use common::networking::subscription_objects::UpdateMode;
 use crate::networking::connection_engine::{ClientSession, ConnectionID, NEXT_CONNECTION_ID, SERVER_STATE};
 use crate::networking::subscriptions::add_subscription;
 use crate::cli::command_parsing::run_command;
-use crate::cli::execute_cli_action;
+use crate::cli::execute_implicit_cli_action;
 
 pub fn activate_socket(port: u16) {
     let address = format!("0.0.0.0:{}", port);
@@ -101,15 +101,13 @@ fn check_version_compatibility(stream: &mut TcpStream) -> Result<(), HandshakeEr
             vec![0u8; msg_len]
         },
         Err(e) => {
-            r_log!(Error, "[Handshake] Len-Read-Stream-Error: {}", e);
-            return Err(HandshakeError::InvalidData("Read_stream corrupt".to_owned()));
+            return Err(HandshakeError::InvalidData(format!("Len-Read Error: {}", e)));
         }
     };
 
     let bytes = match stream.read_exact(&mut buffer) {
         Err(e) => {
-            r_log!(Error,"[Handshake] Connection error : {}", e);
-            return Err(HandshakeError::InvalidData("read_stream corrupt".to_owned()));
+            return Err(HandshakeError::InvalidData(format!("Read Error: {}", e)));
         }
         Ok(_) => buffer
     };
@@ -165,7 +163,17 @@ fn read_thread(stream: &mut TcpStream, connection_id: ConnectionID, tx_channel: 
                 vec![0u8; msg_len]
             },
             Err(e) => {
-                r_log!(Error, "[Conn {}] Length of read-stream-error: {}", connection_id, e);
+                if e.kind() == std::io::ErrorKind::UnexpectedEof {
+                    if token.is_none() {
+                        r_log!(SuccessEvent,"[Conn {}] Client disconnected successfully", connection_id);
+                    } else {
+                        r_log!(Error, "[Conn {}] Client disconnected without logging out. Session is still active",
+                            connection_id
+                        );
+                    }
+                } else {
+                    r_log!(Error, "[Conn {}] Length of read-stream-error: {}", connection_id, e);
+                }
                 break;
             }
         };
@@ -391,7 +399,7 @@ fn handle_messages(msg: TcpClientMessage, connection_id: ConnectionID, token: Se
         }
 
         TcpClientMessage::ExecuteCommand{ command, response_id} => {
-            let answer = run_command(command);
+            let answer = run_command(false, command);
             r_log!(answer.0, "{}", answer.1);
             Some(CommandOutput{
                 answer,
@@ -400,9 +408,9 @@ fn handle_messages(msg: TcpClientMessage, connection_id: ConnectionID, token: Se
         }
 
         TcpClientMessage::ExecuteImplicitCommand { command, response_id} => {
-            let answer = execute_cli_action(&command);
-            r_log!(answer.0, "{}", answer.1);
-            Some(CommandOutput {
+            let answer = execute_implicit_cli_action(&command);
+            //TODO Add logging for this
+            Some(ImplicitCommandOutput {
                 answer,
                 response_id
             })

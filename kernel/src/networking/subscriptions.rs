@@ -23,9 +23,9 @@ LazyLock::new(|| RwLock::new(ContinuousBuffer::new()));
 
 pub fn add_subscription(token: &SessionID, topic: &SubscribeTopic, update_mode: &UpdateMode) {
     let mut server_state = SERVER_STATE.write().unwrap();
-    let mut user_data = server_state.get_mut(&token);
+    let user_data = server_state.get_mut(&token);
 
-    if let Some(mut user_data) = user_data {
+    if let Some(user_data) = user_data {
         user_data.subscriptions.push((topic.clone(), update_mode.clone()));
 
         if let Some((sender, _)) = &user_data.active_connection {
