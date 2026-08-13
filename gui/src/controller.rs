@@ -124,9 +124,6 @@ pub enum UiEvent {
     SetConnectionState {
         state: ConnectionState,
     },
-    SetSessionState {
-        state: SessionState,
-    },
     LogoutRequest,
     SubscribeRequest {
         topic: SubscribeTopic,
@@ -183,58 +180,26 @@ pub(crate) fn handle_events(
                 }
             }
             UiEvent::SetConnectionState { state } => {
-                if state == ConnectionState::Error {
-                    for (_, tab) in tree.iter_all_tabs_mut() {
-                        if let Tab::Terminal(panel) = tab {
-                            panel.is_active = false;
-                            panel.add_fragments(vec![TextFragment {
-                                text: "[ERROR] There was an Error with the connection!".to_string(),
-                                color: Color32::RED,
-                            }]);
-                        }
-                    }
-                } else if state == ConnectionState::Disconnected {
-                    for (_, tab) in tree.iter_all_tabs_mut() {
-                        if let Tab::Terminal(panel) = tab {
-                            panel.is_active = false;
-                            panel.add_fragments(vec![TextFragment {
-                                text: "[INFO] Kernel disconnected!".to_string(),
-                                color: Color32::LIGHT_BLUE,
-                            }]);
-                        }
+                for (_, tab) in tree.iter_all_tabs_mut() {
+                    if let Tab::Terminal(panel) = tab {
+                        panel.is_active = state == (ConnectionState::Connected{ session_state: LoggedIn});
+                        panel.add_fragments(vec![TextFragment {
+                            text: match &state {
+                                ConnectionState::Disconnected | ConnectionState::Error => "[ERROR] There was an Error with the connection!",
+                                ConnectionState::Connected { session_state: LoggedIn} => "[INFO] Logins successful, Terminal ready!",
+                                ConnectionState::Connected { session_state: LoggedOut} => "[INFO] Logged out! Terminal inactive!",
+                                _ => {""}
+                            }.to_string(),
+                            color: match &state {
+                                ConnectionState::Disconnected | ConnectionState::Error => Color32::RED,
+                                ConnectionState::Connected { session_state: LoggedIn} => Color32::GREEN,
+                                ConnectionState::Connected { session_state: LoggedOut} => Color32::LIGHT_BLUE,
+                                _ => Color32::BLACK,
+                            },
+                        }]);
                     }
                 }
                 *connection_state = state;
-            }
-            UiEvent::SetSessionState { state } => {
-                match &state {
-                    SessionState::LoggedIn => {
-                        for (_, tab) in tree.iter_all_tabs_mut() {
-                            if let Tab::Terminal(panel) = tab {
-                                panel.is_active = true;
-                                panel.add_fragments(vec![TextFragment {
-                                    text: "[INFO] Connection established, terminal ready!".to_string(),
-                                    color: Color32::LIGHT_GREEN,
-                                }]);
-                            }
-                        }
-                    }
-                    SessionState::LoggedOut | SessionState::LoginFailed(_) => {
-                        for (_, tab) in tree.iter_all_tabs_mut() {
-                            if let Tab::Terminal(panel) = tab {
-                                panel.is_active = false;
-                                panel.add_fragments(vec![TextFragment {
-                                    text: "[INFO] User logged out! Log in to use Terminal".to_string(),
-                                    color: Color32::YELLOW,
-                                }]);
-                            }
-                        }
-                    }
-                    SessionState::LoginPending => {}
-                }
-                *connection_state = ConnectionState::Connected {
-                    session_state: state,
-                };
             }
             UiEvent::LogoutRequest => {
                 let msg = TcpClientMessage::Logout;

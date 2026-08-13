@@ -408,6 +408,13 @@ impl eframe::App for MyApp {
         self.draw_connection_settings(ctx);
         self.draw_session_settings(ctx);
     }
+    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
+        r_log!(Info, "Shutting down..");
+
+        if let Some(ref sender) = self.tcp_write_sender {
+            let _ = sender.send(TcpClientMessage::Logout);
+        }
+    }
 }
 struct MyTabViewer;
 
