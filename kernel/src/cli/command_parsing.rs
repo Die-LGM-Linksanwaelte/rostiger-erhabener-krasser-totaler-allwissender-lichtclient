@@ -371,7 +371,10 @@ fn parse_exit(mut args: SplitAsciiWhitespace) -> Result<CliAction,String> {
 
 fn parse_universe_and_channel(mut args: SplitAsciiWhitespace) -> Result<(usize, ChannelIndex),String> {
     let parsed_string = args.next().unwrap();
-    let (universe, channel) = parsed_string.split_once(".").unwrap();
+    let (universe, channel) = match parsed_string.split_once(".") {
+        Some(pair) => pair,
+        None => return Err("Error: Please specify the channel with [universe].[channel]".to_string()),
+    };
     let universe = match universe.parse::<usize>() {
         Ok(universe) => universe,
         Err(_) => {
