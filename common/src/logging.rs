@@ -35,10 +35,12 @@ impl fmt::Display for LogLevel {
 
 
 #[derive (Debug,Clone)]
-pub struct LogMessage {
-    pub level: LogLevel,
-    pub text: String,
-    pub timestamp: DateTime<Local>,
+struct LogMessage {
+    level: LogLevel,
+    text: String,
+    timestamp: DateTime<Local>,
+    is_debug: bool,
+    
 }
 
 pub trait LogSink: Send + Sync {
@@ -80,11 +82,12 @@ impl Logger {
         self.sinks.write().unwrap().push(sink);
     }
 
-    pub fn dispatch(&self, level: LogLevel, text: String) {
+    pub fn dispatch(&self, level: LogLevel, text: String, is_debug: bool) {
         let msg = LogMessage {
             level,
             text,
             timestamp: Local::now(),
+            is_debug,
         };
 
         let _ = self.log_tx.send(msg);
@@ -94,8 +97,16 @@ impl Logger {
 #[macro_export]
 macro_rules! r_log {
     ($level:expr, $($arg:tt)*) => {
-        $crate::logging::Logger::global().dispatch($level, format!($($arg)*))
+        $crate::logging::Logger::global().dispatch($level, format!($($arg)*), false)
     }
+}
+
+#[macro_export]
+
+macro_rules! r_debug_log {
+    ($level:expr, $($arg:tt)*) => {
+        $crate::logging::Logger::global().dispatch($level, format!($($arg)*), true)
+    };
 }
 
 pub struct TerminalSink {
@@ -104,6 +115,10 @@ pub struct TerminalSink {
 
 impl LogSink for TerminalSink {
     fn receive(&self, message: &LogMessage) {
+        if message.is_debug && !cfg!(all(debug_assertions, not(test))) {
+            return;
+        }
+        
         let color = match message.level {
             LogLevel::SuccessEvent =>   "\x1B[42m\x1B[30m",
             LogLevel::Info =>           "\x1B[44m\x1B[30m",

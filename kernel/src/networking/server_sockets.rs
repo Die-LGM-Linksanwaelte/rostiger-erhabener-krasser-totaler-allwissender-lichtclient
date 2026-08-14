@@ -6,7 +6,7 @@ use std::sync::mpsc;
 use std::sync::mpsc::{Receiver,Sender};
 use std::time::Duration;
 use rand::{RngExt};
-use common::r_log;
+use common::{r_log, r_debug_log};
 use common::logging::LogLevel::*;
 use common::networking::messages::{HandshakeRequest, HandshakeResponse, SessionID, TcpClientMessage, TcpServerMessage};
 use common::networking::messages::TcpServerMessage::{CommandOutput, ImplicitCommandOutput, LogoutOk};
@@ -189,7 +189,7 @@ fn read_thread(stream: &mut TcpStream, connection_id: ConnectionID, tx_channel: 
         };
 
         let msg = bincode::deserialize::<TcpClientMessage>(&bytes).unwrap();
-        r_log!(Info,"[Conn {}] Received Enum: {:?}", connection_id, msg);
+        r_debug_log!(Info,"[Conn {}] Received Enum: {:?}", connection_id, msg);
 
         token = update_login_status(&msg, token, &tx_channel, connection_id);
 
@@ -239,7 +239,7 @@ fn read_thread(stream: &mut TcpStream, connection_id: ConnectionID, tx_channel: 
             }
         };
     }
-    r_log!(Info,"The Read-Thread  {} is dead! Long live the Read-Thread!", connection_id);
+    r_debug_log!(Info,"The Read-Thread  {} is dead! Long live the Read-Thread!", connection_id);
 }
 
 fn write_thread(rx_channel: Receiver<TcpServerMessage>, mut write_stream: TcpStream, connection_id: ConnectionID) {
@@ -276,7 +276,7 @@ fn write_thread(rx_channel: Receiver<TcpServerMessage>, mut write_stream: TcpStr
 
     //Thread the Ripper, we kill the read-thread with us
     let _ = write_stream.shutdown(Shutdown::Both);
-    r_log!(Info,"The Write-Thread {} is dead! Long live the Write-Thread!", connection_id);
+    r_debug_log!(Info,"The Write-Thread {} is dead! Long live the Write-Thread!", connection_id);
 }
 
 fn update_login_status(
@@ -374,7 +374,7 @@ fn update_login_status(
 
     if let Some(response) = response {
         if let Err(e) = tx_channel.send(response) {
-            r_log!(Error,"[Conn {}] Fehler beim Senden der Auth-Antwort an den Channel: {}", connection_id, e);
+            r_log!(Error,"[Conn {}] Error sending the auth response to the channel: {}", connection_id, e);
         }
     }
 
@@ -402,7 +402,7 @@ fn handle_messages(msg: TcpClientMessage, connection_id: ConnectionID, token: Se
 
         TcpClientMessage::ExecuteCommand{ command, response_id} => {
             let answer = run_command(false, command);
-            r_log!(answer.0, "{}", answer.1);
+            r_log!(answer.0, "[Conn {}] {}", connection_id, answer.1);
             Some(CommandOutput{
                 answer,
                 response_id

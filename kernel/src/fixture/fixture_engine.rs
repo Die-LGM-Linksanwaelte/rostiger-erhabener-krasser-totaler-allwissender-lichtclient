@@ -10,7 +10,7 @@ use common::fixture::fixture_command::FixtureCommand;
 use common::fixture::FixtureError::InvalidFixture;
 use common::logging::LogLevel::{Error, Info};
 use common::networking::subscription_objects::{DMXConfigForClientState, DMXConfigurationForClient};
-use common::r_log;
+use common::{r_debug_log, r_log};
 use crate::fixture::fixture_engine::ChannelReservation::{Empty, Pending, Reserved};
 use crate::networking::on_dmx_config_update;
 
@@ -61,7 +61,7 @@ impl FixtureEngine {
             engine.run(interface_sender)
         });
 
-        r_log!(Info, "Fixture Engine Actor thread started successfully.");
+        r_debug_log!(Info, "Fixture Engine Actor thread started successfully.");
 
         Ok(interface_receiver)
     }
@@ -301,7 +301,7 @@ impl FixtureEngine {
                 match &universe[channel as usize] {
                     Reserved(existing, _, _) if *existing == *name => {}
                     _ => {
-                        r_log!(Error, "Unexpected channel state ({:?}) while removind reservations for {}. \
+                        r_log!(Error, "Unexpected channel state ({:?}) while removing reservations for {}. \
                         This should never happen.",
                             universe[channel as usize], name);
                         return Ok::<(), ChannelError>(());

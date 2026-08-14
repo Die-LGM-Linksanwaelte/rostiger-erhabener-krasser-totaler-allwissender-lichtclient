@@ -5,7 +5,7 @@ mod fixture;
 use std::io::{self, Write};
 use std::{env, thread};
 use std::time::Duration;
-use common::r_log;
+use common::{r_debug_log, r_log};
 use common::logging::{FileSink, Logger, TerminalSink};
 use common::logging::LogLevel::*;
 use interface::interfaces::dmx_output_loop;
@@ -52,9 +52,12 @@ fn main() -> io::Result<()> {
 
         let input = input.trim().to_string();
 
+        r_debug_log!(Info, "[Kernel Cli] User input: {}", input);
+
+
         let response = run_command(true, input);
 
-        r_log!(response.0, "{}", response.1);
+        r_log!(response.0, "[Kernel Cli] {}", response.1);
     }
 
     _artnet_handle.join().unwrap();
