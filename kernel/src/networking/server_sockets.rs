@@ -4,6 +4,7 @@ use std::thread;
 use std::sync::atomic::Ordering;
 use std::sync::mpsc;
 use std::sync::mpsc::{Receiver,Sender};
+use std::time::Duration;
 use rand::{RngExt};
 use common::r_log;
 use common::logging::LogLevel::*;
@@ -21,8 +22,9 @@ pub fn activate_socket(port: u16) {
         Ok(l) => l,
         Err(e) => {
             r_log!(Error,"CRITICAL: Failed to bind TCP socket on address {}. Is another kernel instance already \
-                    running? OS Error: {}",address, e);
-
+                    running? To change port, use --port [port]. OS Error: {}",address, e);
+            // Give the Logger time to do its thing
+            thread::sleep(Duration::from_millis(50));
             std::process::exit(1);
         }
     };
