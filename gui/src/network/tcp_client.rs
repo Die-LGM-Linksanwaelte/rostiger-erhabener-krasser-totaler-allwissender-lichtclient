@@ -7,7 +7,9 @@ use common::{networking, r_log};
 use std::env;
 use std::io::{Read, Write};
 use std::net::{Shutdown, TcpStream};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, Sender};
+use std::sync::Arc;
 use std::thread;
 use crate::controller::{send_ui_event, UiEvent};
 
@@ -134,16 +136,22 @@ impl TcpClient {
         };
 
         let tcp_sender = self.tcp_sender.clone();
+        let is_disconnecting = Arc::new(AtomicBool::new(false));
+        let is_disconnecting_clone = Arc::clone(&is_disconnecting);
 
         thread::spawn(move || {
-            Self::listen_tcp(read_stream, tcp_sender);
+            Self::listen_tcp(read_stream, tcp_sender, is_disconnecting_clone);
         });
 
-        Self::write_thread(self, write_stream);
+        Self::write_thread(self, write_stream, is_disconnecting);
     }
 
     ///runs the listen thread that receives the tcp messages from the kernel and sends it to the controller
-    fn listen_tcp(mut read_stream: TcpStream, tcp_sender: Sender<TcpServerMessage>) {
+    fn listen_tcp(
+        mut read_stream: TcpStream,
+        tcp_sender: Sender<TcpServerMessage>,
+        is_disconnecting: Arc<AtomicBool>,
+    ) {
         loop {
             let mut len_buf = [0u8; 4];
             let mut response_buffer = match read_stream.read_exact(&mut len_buf) {
@@ -152,7 +160,12 @@ impl TcpClient {
                     vec![0u8; msg_len]
                 }
                 Err(e) => {
-                    r_log!(Error,"[Read-stream] Len-Error: {}", e);
+                    if is_disconnecting.load(Ordering::SeqCst) {
+                        r_log!(Info, "TCP connection closed (requested by client).");
+                    } else {
+                        r_log!(Error, "TCP connection lost unexpectedly from server: {}", e);
+                        Self::set_connection_state(ConnectionState::Error);
+                    }
                     break;
                 }
             };
@@ -161,7 +174,12 @@ impl TcpClient {
                 Ok(_) => match bincode::deserialize::<TcpServerMessage>(&response_buffer) {
                     Ok(kernel_msg) => {
                         if let Err(e) = tcp_sender.send(kernel_msg) {
-                            r_log!(Error, "Error sending TcpServerMessage: {}", e);
+                            if is_disconnecting.load(Ordering::SeqCst) {
+                                r_log!(Info, "TCP receiver channel closed, stopping listen thread.");
+                            } else {
+                                r_log!(Error, "Error sending TcpServerMessage: {}", e);
+                            }
+                            break;
                         }
                     }
                     Err(e) => {
@@ -169,8 +187,12 @@ impl TcpClient {
                     }
                 },
                 Err(e) => {
-                    r_log!(Error, "Error reading from TcpStream: {}", e);
-                    Self::set_connection_state(ConnectionState::Error);
+                    if is_disconnecting.load(Ordering::SeqCst) {
+                        r_log!(Info, "TCP connection closed while reading body.");
+                    } else {
+                        r_log!(Error, "Error reading from TcpStream: {}", e);
+                        Self::set_connection_state(ConnectionState::Error);
+                    }
                     break;
                 }
             }
@@ -178,7 +200,7 @@ impl TcpClient {
     }
 
     ///runs the write thread, that receives the messages from the ui and sends it via tcp to the socket
-    fn write_thread(&self, mut write_stream: TcpStream) {
+    fn write_thread(&self, mut write_stream: TcpStream, is_disconnecting: Arc<AtomicBool>) {
         while let Ok(message) = self.tcp_receiver.recv() {
             match bincode::serialize(&message) {
                 Ok(payload) => {
@@ -189,9 +211,6 @@ impl TcpClient {
                             "Got error while sending length prefix: {} Stopped write-Thread",
                             e
                         );
-                        send_ui_event(UiEvent::SetConnectionState {
-                            state: ConnectionState::Disconnected
-                        });
                         break;
                     }
                     if let Err(e) = write_stream.write_all(&payload) {
@@ -200,9 +219,6 @@ impl TcpClient {
                             "Got error while sending to Server: {} Stopped write-Thread",
                             e
                         );
-                        send_ui_event(UiEvent::SetConnectionState {
-                            state: ConnectionState::Disconnected
-                        });
                         break;
                     }
                 }
@@ -212,8 +228,18 @@ impl TcpClient {
                 }
             }
         }
-        //Thread the Ripper, we kill the read-thread with us
-        let _ = write_stream.shutdown(Shutdown::Both);
-        //r_log!(Info,"The Write-Thread {} is dead! Long live the Write-Thread!", connection_id);
+        is_disconnecting.store(true, Ordering::SeqCst);
+        Self::close_tcp_connection(&write_stream);
+    }
+
+    /// Closes the TCP connection by shutting down the stream in both directions.
+    /// Calling shutdown(Shutdown::Both) on one stream handle unblocks any reading thread on cloned handles.
+    fn close_tcp_connection(stream: &TcpStream) {
+        if let Err(e) = stream.shutdown(Shutdown::Both) {
+            r_log!(Error, "Failed to shutdown TcpStream: {}", e);
+        }
+        send_ui_event(UiEvent::SetConnectionState {
+            state: ConnectionState::Disconnected,
+        });
     }
 }

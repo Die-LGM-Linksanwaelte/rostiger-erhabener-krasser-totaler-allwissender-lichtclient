@@ -46,7 +46,7 @@ pub fn start_udp_listener(
                                 );
 
                                 if let Err(e) = dmx_sender.send((universe_id, dmx_data_array)) {
-                                    r_log!(Error, "Error sending DMX-Data: {}", e);
+                                    r_log!(Info, "DMX channel closed, stopping UDP listener: {}", e);
                                     break;
                                 } else {
                                     ctx.request_repaint();

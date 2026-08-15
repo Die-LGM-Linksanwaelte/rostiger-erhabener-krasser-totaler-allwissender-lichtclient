@@ -125,6 +125,7 @@ pub enum UiEvent {
         state: ConnectionState,
     },
     LogoutRequest,
+    DisconnectRequest,
     SubscribeRequest {
         topic: SubscribeTopic,
     },
@@ -132,7 +133,7 @@ pub enum UiEvent {
 
 pub(crate) fn handle_events(
     ui_receiver: &Receiver<UiEvent>,
-    tcp_sender: &Option<Sender<TcpClientMessage>>,
+    tcp_sender: &mut Option<Sender<TcpClientMessage>>,
     connection_state: &mut ConnectionState,
     tree: &mut DockState<Tab>,
 ) {
@@ -181,6 +182,9 @@ pub(crate) fn handle_events(
             }
             UiEvent::SetConnectionState { state } => {
                 for (_, tab) in tree.iter_all_tabs_mut() {
+                    if state == (ConnectionState::Connected {session_state: LoggedIn}) {
+                        tab.on_connect();
+                    }
                     if let Tab::Terminal(panel) = tab {
                         panel.is_active = state == (ConnectionState::Connected{ session_state: LoggedIn});
                         panel.add_fragments(vec![TextFragment {
@@ -219,6 +223,11 @@ pub(crate) fn handle_events(
                         "Failed to send logout request: tcp sender doesn't exist"
                     );
                 }
+            }
+            UiEvent::DisconnectRequest => {
+                r_log!(Info, "Closing connection requested via UI");
+                *tcp_sender = None;
+                *connection_state = ConnectionState::Disconnected;
             }
             UiEvent::SubscribeRequest { topic } => {
                 let msg = TcpClientMessage::Subscribe {

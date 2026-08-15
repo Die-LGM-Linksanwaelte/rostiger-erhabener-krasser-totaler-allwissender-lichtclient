@@ -9,7 +9,7 @@ use egui_dock::{DockArea, DockState, TabViewer};
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{mpsc, LazyLock, RwLock};
 use common::networking::subscription_objects::SubscribeTopic::DMXConfiguration;
-use crate::controller::UiEvent;
+use crate::controller::{send_ui_event, UiEvent};
 use crate::network::udp_client;
 use crate::network::udp_client::MAX_CHANNEL;
 use network::connection_state::{ConnectionState, SessionState};
@@ -169,6 +169,18 @@ impl MyApp {
                         .clicked()
                     {
                         let event = UiEvent::LogoutRequest;
+                        if let Err(e) = self.ui_event_sender.send(event) {
+                            r_log!(Error, "Failed to send UiEvent: {}", e);
+                        }
+                    }
+                    if ui
+                        .add_enabled(
+                            !matches!(self.connection_state, ConnectionState::Disconnected),
+                            egui::Button::new("Disconnect"),
+                        )
+                        .clicked()
+                    {
+                        let event = UiEvent::DisconnectRequest;
                         if let Err(e) = self.ui_event_sender.send(event) {
                             r_log!(Error, "Failed to send UiEvent: {}", e);
                         }
@@ -397,7 +409,7 @@ impl eframe::App for MyApp {
         );
         controller::handle_events(
             &self.ui_event_receiver,
-            &self.tcp_write_sender,
+            &mut self.tcp_write_sender,
             &mut self.connection_state,
             &mut self.tree,
         );
@@ -411,9 +423,11 @@ impl eframe::App for MyApp {
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
         r_log!(Info, "Shutting down..");
 
-        if let Some(ref sender) = self.tcp_write_sender {
+        if let Some(sender) = self.tcp_write_sender.take() {
             let _ = sender.send(TcpClientMessage::Logout);
         }
+
+        send_ui_event(UiEvent::DisconnectRequest);
     }
 }
 struct MyTabViewer;
