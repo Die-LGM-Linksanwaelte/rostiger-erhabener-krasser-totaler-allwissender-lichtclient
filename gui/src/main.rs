@@ -2,20 +2,20 @@ use common::logging::LogLevel::*;
 use common::logging::{FileSink, Logger, TerminalSink};
 use common::networking::messages::UserRole;
 use common::networking::messages::{TcpClientMessage, TcpServerMessage};
+use common::networking::subscription_objects::SubscribeTopic::DMXConfiguration;
 use common::r_log;
 use eframe::egui;
-
 use egui_dock::{DockArea, DockState, TabViewer};
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{mpsc, LazyLock, RwLock};
-use common::networking::subscription_objects::SubscribeTopic::DMXConfiguration;
+use std::net::ToSocketAddrs;
 use crate::controller::{send_ui_event, UiEvent};
 use crate::network::udp_client;
 use crate::network::udp_client::MAX_CHANNEL;
+use crate::network::connection_state::ConnectionState::Connected;
 use network::connection_state::{ConnectionState, SessionState};
 use network::tcp_client::TcpClient;
 use panels::Tab;
-use crate::network::connection_state::ConnectionState::Connected;
 
 mod controller;
 mod network;
@@ -29,8 +29,6 @@ fn main() -> eframe::Result<()> {
     Logger::global().add_sink(Box::new(FileSink::new(log_path.to_str().unwrap_or("/tmp/rektal_gui.log"))));
     Logger::global().add_sink(Box::new(TerminalSink { cli_prompt: None }));
 
-
-    // Icon zur Compile-Zeit einbetten → kein Dateizugriff zur Laufzeit nötig
     let icon = {
         let image = img_crate::load_from_memory(include_bytes!("../assets/rektal-logo-without-title-32px.png"))
             .expect("Icon konnte nicht geladen werden")
@@ -114,7 +112,7 @@ impl MyApp {
 
         let initial_terminal_panel = panels::terminal::TerminalPanel::new(0);
 
-        Self {
+        let mut app = Self {
             tree: DockState::new(vec![Tab::Terminal(initial_terminal_panel)]),
             show_session_settings: false,
             show_connection_settings: false,
@@ -131,7 +129,45 @@ impl MyApp {
             password: String::new(),
             draft_username: String::new(),
             draft_role: UserRole::Programmer,
+        };
+
+        if let Some(target) = parse_args() {
+            app.server_address = target;
+            app.connect_to_server();
         }
+
+        app
+    }
+
+    /// Spawns the TCP client thread and connects to the configured server_address.
+    fn connect_to_server(&mut self) {
+        let (tcp_write_sender, tcp_write_receiver) = mpsc::channel();
+        let (tcp_listen_sender, tcp_listen_receiver) = mpsc::channel();
+        self.tcp_write_sender = Some(tcp_write_sender);
+        self.tcp_listen_receiver = Some(tcp_listen_receiver);
+
+        let server_address_clone = self.server_address.clone();
+        std::thread::spawn(move || {
+            let target_raw = if server_address_clone.contains(':') {
+                server_address_clone
+            } else {
+                format!("{}:6767", server_address_clone)
+            };
+
+            if target_raw.to_socket_addrs().is_ok() {
+                let mut tcp_client = TcpClient::new(
+                    target_raw,
+                    tcp_write_receiver,
+                    tcp_listen_sender,
+                );
+                tcp_client.start_tcp_client();
+            } else {
+                r_log!(Error, "Failed to resolve server address: {}", target_raw);
+                send_ui_event(UiEvent::SetConnectionState {
+                    state: ConnectionState::Error,
+                });
+            }
+        });
     }
 
     /// Draws the top menu bar, containing the connection and session controls.
@@ -241,20 +277,7 @@ impl MyApp {
 
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::TOP), |ui| {
                         if ui.button("Connect").clicked() {
-                            let (tcp_write_sender, tcp_write_receiver) = mpsc::channel();
-                            let (tcp_listen_sender, tcp_listen_receiver) = mpsc::channel();
-                            self.tcp_write_sender = Some(tcp_write_sender);
-                            self.tcp_listen_receiver = Some(tcp_listen_receiver);
-
-                            let server_address_clone = self.server_address.clone();
-                            std::thread::spawn(move || {
-                                let mut tcp_client = TcpClient::new(
-                                    format!("{}:6767", server_address_clone).parse().unwrap(),
-                                    tcp_write_receiver,
-                                    tcp_listen_sender,
-                                );
-                                tcp_client.start_tcp_client();
-                            });
+                            self.connect_to_server();
                             request_conn_close = true;
                         }
                         if ui.button("Close").clicked() {
@@ -430,6 +453,21 @@ impl eframe::App for MyApp {
         send_ui_event(UiEvent::DisconnectRequest);
     }
 }
+
+fn parse_args() -> Option<String> {
+    let args: Vec<String> = std::env::args().collect();
+    let mut iter = args.iter();
+
+    while let Some(arg) = iter.next() {
+        if arg == "-c" || arg == "--connect" || arg == "-conn" {
+            if let Some(target) = iter.next() {
+                return Some(target.clone());
+            }
+        }
+    }
+    None
+}
+
 struct MyTabViewer;
 
 impl TabViewer for MyTabViewer {
