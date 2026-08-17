@@ -1,3 +1,4 @@
+use crate::network::connection_state::SessionState::{LoggedIn, LoggedOut, LoginFailed};
 use crate::network::connection_state::{ConnectionState, SessionState};
 use crate::network::udp_client::MAX_CHANNEL;
 use crate::panels::terminal::TextFragment;
@@ -10,7 +11,26 @@ use common::r_log;
 use eframe::egui::Color32;
 use egui_dock::DockState;
 use std::sync::mpsc::{Receiver, Sender};
-use crate::network::connection_state::SessionState::{LoggedIn, LoggedOut, LoginFailed};
+
+pub enum UiEvent {
+    SendTerminalCommand {
+        id: u32,
+        command: String,
+    },
+    LoginRequest {
+        password: String,
+        user_name: String,
+        user_role: common::networking::messages::UserRole,
+    },
+    SetConnectionState {
+        state: ConnectionState,
+    },
+    LogoutRequest,
+    DisconnectRequest,
+    SubscribeRequest {
+        topic: SubscribeTopic,
+    },
+}
 
 pub(crate) fn handle_dmx_data(
     dmx_receiver: &Receiver<(u8, [u8; MAX_CHANNEL])>,
@@ -32,6 +52,42 @@ pub fn send_ui_event(event: UiEvent) {
         if let Some(sender) = guard.as_ref() {
             let _ = sender.send(event);
         }
+    }
+}
+
+fn process_terminal_command(
+    id: u32,
+    command: String,
+    tcp_sender: &Option<Sender<TcpClientMessage>>,
+) {
+    match command.as_str() {
+        "logout" => send_ui_event(UiEvent::LogoutRequest),
+        _ => {
+            let msg = TcpClientMessage::ExecuteCommand {
+                response_id: id,
+                command,
+            };
+            if let Some(tcp_sender) = tcp_sender {
+                if let Err(e) = tcp_sender.send(msg) {
+                    r_log!(Error, "Failed to send execute command: {}", e);
+                }
+            } else {
+                r_log!(
+                    Error,
+                    "Failed to send execute command: tcp sender doesn't exist"
+                );
+            }
+        }
+    }
+}
+pub fn log_level_to_color32(level: LogLevel) -> Color32 {
+    match level {
+        SuccessEvent => Color32::GREEN,
+        Info => Color32::BLUE,
+        Warning => Color32::YELLOW,
+        Error => Color32::RED,
+        UserError => Color32::GOLD,
+        UserSuccess => Color32::LIGHT_GREEN,
     }
 }
 
@@ -61,7 +117,7 @@ pub(crate) fn handle_incoming_network_data(
                 TcpServerMessage::LoginOk { token } => {
                     r_log!(UserSuccess, "Login Successful! Token: {}", token);
                     send_ui_event(UiEvent::SetConnectionState {
-                        state: ConnectionState::Connected{
+                        state: ConnectionState::Connected {
                             session_state: LoggedIn,
                         },
                     });
@@ -69,7 +125,7 @@ pub(crate) fn handle_incoming_network_data(
                 TcpServerMessage::LoginFailed { reason } => {
                     r_log!(UserError, "Login Failed: {}", reason);
                     send_ui_event(UiEvent::SetConnectionState {
-                        state: ConnectionState::Connected{
+                        state: ConnectionState::Connected {
                             session_state: LoginFailed(reason),
                         },
                     });
@@ -77,7 +133,7 @@ pub(crate) fn handle_incoming_network_data(
                 TcpServerMessage::LogoutOk => {
                     r_log!(UserSuccess, "Logout Successful");
                     send_ui_event(UiEvent::SetConnectionState {
-                        state: ConnectionState::Connected{
+                        state: ConnectionState::Connected {
                             session_state: LoggedOut,
                         },
                     });
@@ -100,37 +156,6 @@ pub(crate) fn handle_incoming_network_data(
     }
 }
 
-pub fn log_level_to_color32(level: LogLevel) -> Color32 {
-    match level {
-        SuccessEvent => Color32::GREEN,
-        Info => Color32::BLUE,
-        Warning => Color32::YELLOW,
-        Error => Color32::RED,
-        UserError => Color32::GOLD,
-        UserSuccess => Color32::LIGHT_GREEN,
-    }
-}
-
-pub enum UiEvent {
-    SendTerminalCommand {
-        id: u32,
-        command: String,
-    },
-    LoginRequest {
-        password: String,
-        user_name: String,
-        user_role: common::networking::messages::UserRole,
-    },
-    SetConnectionState {
-        state: ConnectionState,
-    },
-    LogoutRequest,
-    DisconnectRequest,
-    SubscribeRequest {
-        topic: SubscribeTopic,
-    },
-}
-
 pub(crate) fn handle_events(
     ui_receiver: &Receiver<UiEvent>,
     tcp_sender: &mut Option<Sender<TcpClientMessage>>,
@@ -140,20 +165,7 @@ pub(crate) fn handle_events(
     while let Ok(event) = ui_receiver.try_recv() {
         match event {
             UiEvent::SendTerminalCommand { id, command } => {
-                let msg = TcpClientMessage::ExecuteCommand {
-                    response_id: id,
-                    command,
-                };
-                if let Some(tcp_sender) = tcp_sender {
-                    if let Err(e) = tcp_sender.send(msg) {
-                        r_log!(Error, "Failed to send execute command: {}", e);
-                    }
-                } else {
-                    r_log!(
-                        Error,
-                        "Failed to send execute command: tcp sender doesn't exist"
-                    );
-                }
+                process_terminal_command(id, command, tcp_sender);
             }
             UiEvent::LoginRequest {
                 password,
@@ -182,22 +194,42 @@ pub(crate) fn handle_events(
             }
             UiEvent::SetConnectionState { state } => {
                 for (_, tab) in tree.iter_all_tabs_mut() {
-                    if state == (ConnectionState::Connected {session_state: LoggedIn}) {
+                    if state
+                        == (ConnectionState::Connected {
+                            session_state: LoggedIn,
+                        })
+                    {
                         tab.on_connect();
                     }
                     if let Tab::Terminal(panel) = tab {
-                        panel.is_active = state == (ConnectionState::Connected{ session_state: LoggedIn});
+                        panel.is_active = state
+                            == (ConnectionState::Connected {
+                                session_state: LoggedIn,
+                            });
                         panel.add_fragments(vec![TextFragment {
                             text: match &state {
-                                ConnectionState::Disconnected | ConnectionState::Error => "[ERROR] There was an Error with the connection!",
-                                ConnectionState::Connected { session_state: LoggedIn} => "[INFO] Logins successful, Terminal ready!",
-                                ConnectionState::Connected { session_state: LoggedOut} => "[INFO] Logged out! Terminal inactive!",
-                                _ => {""}
-                            }.to_string(),
+                                ConnectionState::Disconnected | ConnectionState::Error => {
+                                    "[ERROR] There was an Error with the connection!"
+                                }
+                                ConnectionState::Connected {
+                                    session_state: LoggedIn,
+                                } => "[INFO] Logins successful, Terminal ready!",
+                                ConnectionState::Connected {
+                                    session_state: LoggedOut,
+                                } => "[INFO] Logged out! Terminal inactive!",
+                                _ => "",
+                            }
+                            .to_string(),
                             color: match &state {
-                                ConnectionState::Disconnected | ConnectionState::Error => Color32::RED,
-                                ConnectionState::Connected { session_state: LoggedIn} => Color32::GREEN,
-                                ConnectionState::Connected { session_state: LoggedOut} => Color32::LIGHT_BLUE,
+                                ConnectionState::Disconnected | ConnectionState::Error => {
+                                    Color32::RED
+                                }
+                                ConnectionState::Connected {
+                                    session_state: LoggedIn,
+                                } => Color32::GREEN,
+                                ConnectionState::Connected {
+                                    session_state: LoggedOut,
+                                } => Color32::LIGHT_BLUE,
                                 _ => Color32::BLACK,
                             },
                         }]);
@@ -212,7 +244,7 @@ pub(crate) fn handle_events(
                         r_log!(Error, "Failed to send logout request: {}", e);
                     } else {
                         for (_, tab) in tree.iter_all_tabs_mut() {
-                            if let Tab::Terminal( panel) = tab {
+                            if let Tab::Terminal(panel) = tab {
                                 panel.is_active = false;
                             }
                         }
