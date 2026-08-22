@@ -1,3 +1,9 @@
+//! # Universe Panel Module
+//!
+//! This module implements the visual DMX Universe view for the R.E.K.T.A.L. GUI application.
+//! It renders up to 512 DMX channels per universe in a dynamic, responsive grid layout,
+//! displays live channel values, and optionally overlays patched fixture devices and property types.
+
 use crate::network::udp_client::MAX_CHANNEL;
 pub use common::fixture::channel::PropertyType;
 use common::networking::subscription_objects::{
@@ -5,20 +11,37 @@ use common::networking::subscription_objects::{
 };
 use eframe::egui;
 
+/// UI Panel representing a single DMX universe view in the docking interface.
+///
+/// Displays a responsive grid of 512 DMX channels ([`MAX_CHANNEL`]), supports switching 
+/// between universes 1 through 16, and dynamically renders patched fixture overlays.
 #[derive(Clone)]
 pub struct UniversePanel {
+    /// The unique ID of the tab hosting this universe panel instance.
     pub tab_id: u32,
+    /// Currently selected universe index (1-based, 1..=16).
     pub selected_universe: u8,
+    /// Live DMX byte values for all 512 channels of the active universe.
     pub dmx_data: [u8; MAX_CHANNEL],
+    /// Configuration mapping fixtures to DMX channels received from the kernel server.
     pub device_configuration: Option<DMXConfigForClientState>,
+    /// Controls whether the settings configuration window is visible.
     settings_open: bool,
+    /// Minimum width of an individual DMX channel cell in pixels.
     min_pure_cell_width: f32,
+    /// Height of an individual DMX channel cell in pixels.
     cell_height: f32,
+    /// Flag enabling or disabling the rendering of patched fixture properties on cells.
     show_device_properties: bool,
+    /// Holds the name of the fixture currently hovered by the mouse cursor.
     hovered_device: Option<String>,
 }
 
 impl UniversePanel {
+    /// Creates a new [`UniversePanel`] instance with default settings for a given tab ID.
+    ///
+    /// # Arguments
+    /// * `tab_id` - The unique identifier of the tab hosting this panel.
     pub fn new(tab_id: u32) -> Self {
         Self {
             tab_id,
@@ -33,6 +56,10 @@ impl UniversePanel {
         }
     }
 
+    /// Renders the main universe panel UI inside an `egui` container.
+    ///
+    /// # Arguments
+    /// * `ui` - Mutable reference to the `egui::Ui` layout context.
     pub fn ui(&mut self, ui: &mut egui::Ui) {
         let panel_id = ui
             .id()
@@ -68,6 +95,10 @@ impl UniversePanel {
         });
     }
 
+    /// Renders the pop-up settings window for configuring universe panel display options.
+    ///
+    /// # Arguments
+    /// * `ui` - Mutable reference to the `egui::Ui` context.
     fn draw_settings_frame(&mut self, ui: &mut egui::Ui) {
         if self.settings_open {
             let mut is_open = self.settings_open;
@@ -104,7 +135,13 @@ impl UniversePanel {
         }
     }
 
+    /// Renders the scrollable DMX channel grid and fixture overlays.
     ///
+    /// Dynamically calculates the optimal number of columns based on available UI width,
+    /// populates all 512 channel cells, and paints fixture overlay banners across patched channels.
+    ///
+    /// # Arguments
+    /// * `ui` - Mutable reference to the `egui::Ui` context.
     fn draw_dmx_cell_pane(&mut self, ui: &mut egui::Ui) {
         let spacing = 4.0;
         let frame_extra = 6.0;
@@ -133,7 +170,6 @@ impl UniversePanel {
                 egui::Grid::new(format!("dmx_grid_{}", self.tab_id))
                     .num_columns(num_columns)
                     .spacing([spacing, spacing])
-                    // WICHTIG: Wir zwingen das Grid hier exakt auf unsere gestreckte Breite!
                     .min_col_width(stretched_full_cell_width)
                     .max_col_width(stretched_full_cell_width)
                     .show(ui, |ui| {
@@ -251,9 +287,16 @@ impl UniversePanel {
             });
     }
 
-    #[allow(dead_code)]
-    fn draw_device_on_dmx_grid(&mut self, _device_name: String) {}
-
+    /// Paints a visual banner overlay spanning across consecutive DMX channels occupied by a single fixture device.
+    ///
+    /// # Arguments
+    /// * `ui` - Mutable reference to the `egui::Ui` context.
+    /// * `start` - Starting DMX channel index (0-based).
+    /// * `end` - Ending DMX channel index (0-based, inclusive).
+    /// * `fixture_name` - Display name of the patched fixture device.
+    /// * `fixture_type_hash` - Hash byte used to generate a unique fixture color.
+    /// * `cell_rects` - Array of cell bounding rectangles for computing overlay spans.
+    /// * `num_columns` - Current number of columns in the grid layout.
     fn draw_device_overlay(
         &self,
         ui: &mut egui::Ui,
@@ -327,7 +370,19 @@ impl UniversePanel {
         }
     }
 
-    ///function that draws a single DMX-Channel-Cell
+    /// Renders a single DMX channel cell inside the grid.
+    ///
+    /// Displays channel number, live byte value, and optional patched property details.
+    ///
+    /// # Arguments
+    /// * `ui` - Mutable reference to the `egui::Ui` context.
+    /// * `channel_num` - 1-based DMX channel number (1..=512).
+    /// * `dmx_config` - Patched fixture configuration for this specific channel.
+    /// * `val` - Live 8-bit DMX value (0..=255).
+    /// * `width` - Target pixel width of the cell frame.
+    ///
+    /// # Returns
+    /// An `egui::Response` representing user interaction with the cell frame.
     fn draw_dmx_cell(
         &mut self,
         ui: &mut egui::Ui,
@@ -406,6 +461,13 @@ impl UniversePanel {
     }
 }
 
+/// Generates a deterministic semi-transparent [`egui::Color32`] hue based on a fixture hash byte.
+///
+/// # Arguments
+/// * `hash` - Hash byte representing the fixture type.
+///
+/// # Returns
+/// A semi-transparent `egui::Color32` color for rendering fixture overlay banners.
 fn get_color_for_fixture_hash(hash: u8) -> egui::Color32 {
     use egui::ecolor::Hsva;
     let hue = (hash as f32) / 255.0;

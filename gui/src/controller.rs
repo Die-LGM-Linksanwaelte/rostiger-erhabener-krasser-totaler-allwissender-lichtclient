@@ -1,3 +1,14 @@
+//! # Controller Module
+//!
+//! The `controller` module acts as the central event handler and coordinator
+//! for the R.E.K.T.A.L. GUI application.
+//!
+//! It is responsible for:
+//! - Draining incoming DMX universe stream data and updating universe UI panels.
+//! - Dispatching global UI events ([`UiEvent`]) via channels.
+//! - Processing network messages ([`TcpServerMessage`]) received from the kernel server.
+//! - Handling UI action events and updating central application states ([`ConnectionState`], [`SessionState`]).
+
 use crate::network::connection_state::SessionState::{LoggedIn, LoggedOut, LoginFailed};
 use crate::network::connection_state::{ConnectionState, SessionState};
 use crate::network::udp_client::MAX_CHANNEL;
@@ -12,26 +23,49 @@ use eframe::egui::Color32;
 use egui_dock::DockState;
 use std::sync::mpsc::{Receiver, Sender};
 
+/// Enum describing global GUI events dispatched across the application.
+///
+/// These events represent user interactions or system actions that require
+/// coordination between UI panels, the central state, or network threads.
 pub enum UiEvent {
+    /// Sends a command entered in a terminal panel to the kernel server (or processes built-in commands).
     SendTerminalCommand {
+        /// The unique ID of the terminal tab originating the command.
         id: u32,
+        /// The command string entered by the user.
         command: String,
     },
+    /// Initiates a login request to the kernel server with user credentials.
     LoginRequest {
+        /// The plain text password entered by the user.
         password: String,
+        /// The username for authentication.
         user_name: String,
+        /// The requested user role (e.g., Programmer, Showrunner).
         user_role: common::networking::messages::UserRole,
     },
+    /// Updates the central connection and session states of the GUI application.
     SetConnectionState {
+        /// The target connection state to apply.
         state: ConnectionState,
     },
+    /// Requests a user session logout from the kernel server.
     LogoutRequest,
+    /// Forcefully disconnects the TCP network connection.
     DisconnectRequest,
+    /// Subscribes to a data topic (e.g. DMX configuration updates) from the server.
     SubscribeRequest {
+        /// The subscription topic requested.
         topic: SubscribeTopic,
     },
 }
 
+/// Drains incoming DMX universe frame data from the UDP receiver channel
+/// and updates the matching Universe panels in the docking tree.
+///
+/// # Arguments
+/// * `dmx_receiver` - Receiver channel producing `(universe_id, dmx_data)` tuples.
+/// * `tree` - Mutable reference to the UI docking tree containing active tabs.
 pub(crate) fn handle_dmx_data(
     dmx_receiver: &Receiver<(u8, [u8; MAX_CHANNEL])>,
     tree: &mut DockState<Tab>,
@@ -47,6 +81,10 @@ pub(crate) fn handle_dmx_data(
     }
 }
 
+/// Thread-safe helper to send a [`UiEvent`] into the global [`UI_EVENT_SENDER`] channel.
+///
+/// # Arguments
+/// * `event` - The [`UiEvent`] to send.
 pub fn send_ui_event(event: UiEvent) {
     if let Ok(guard) = crate::UI_EVENT_SENDER.read() {
         if let Some(sender) = guard.as_ref() {
@@ -55,6 +93,16 @@ pub fn send_ui_event(event: UiEvent) {
     }
 }
 
+/// Processes a command entered into a terminal tab.
+///
+/// Handles built-in local terminal commands (like `"logout"`) directly or packages
+/// generic commands into a [`TcpClientMessage::ExecuteCommand`] to send to the server.
+///
+/// # Arguments
+/// * `id` - The unique ID of the terminal tab.
+/// * `command` - The command string entered by the user.
+/// * `tcp_sender` - Optional sender channel to transmit messages to the TCP network thread.
+/// * `tree` - Mutable reference to the UI docking tree to update terminal outputs.
 fn process_terminal_command(
     id: u32,
     command: String,
@@ -68,7 +116,7 @@ fn process_terminal_command(
                 if let Tab::Terminal(panel) = tab {
                     panel.add_fragments(vec![TextFragment {
                         text: "[SUCCESS] Logout successful, Terminal inactive!".to_string(),
-                        color: Color32::GREEN,
+                        color: log_level_to_color32(SuccessEvent),
                     }]);
                 };
             }
@@ -91,6 +139,14 @@ fn process_terminal_command(
         }
     }
 }
+
+/// Maps a common [`LogLevel`] enum variant to a corresponding `egui` [`Color32`] for UI rendering.
+///
+/// # Arguments
+/// * `level` - The log level to convert.
+///
+/// # Returns
+/// An `egui::Color32` representing the log level.
 pub fn log_level_to_color32(level: LogLevel) -> Color32 {
     match level {
         SuccessEvent => Color32::GREEN,
@@ -102,6 +158,12 @@ pub fn log_level_to_color32(level: LogLevel) -> Color32 {
     }
 }
 
+/// Drains incoming network messages ([`TcpServerMessage`]) from the TCP receiver channel
+/// and updates UI tabs or triggers connection state changes.
+///
+/// # Arguments
+/// * `tcp_receiver` - Mutable reference to the optional TCP network message receiver channel.
+/// * `tree` - Mutable reference to the UI docking tree.
 pub(crate) fn handle_incoming_network_data(
     tcp_receiver: &mut Option<Receiver<TcpServerMessage>>,
     tree: &mut DockState<Tab>,
@@ -167,6 +229,16 @@ pub(crate) fn handle_incoming_network_data(
     }
 }
 
+/// Drains and processes all queued [`UiEvent`] items sent from UI interactions or network handlers.
+///
+/// Manages connection state transitions, sends outgoing TCP messages, and activates/deactivates
+/// UI panels in the docking tree accordingly.
+///
+/// # Arguments
+/// * `ui_receiver` - Receiver channel for queued [`UiEvent`]s.
+/// * `tcp_sender` - Mutable reference to the optional TCP client sender channel.
+/// * `connection_state` - Mutable reference to the application's central [`ConnectionState`].
+/// * `tree` - Mutable reference to the UI docking tree.
 pub(crate) fn handle_events(
     ui_receiver: &Receiver<UiEvent>,
     tcp_sender: &mut Option<Sender<TcpClientMessage>>,

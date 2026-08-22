@@ -1,3 +1,9 @@
+//! # R.E.K.T.A.L. GUI Main Application
+//!
+//! Entry point and primary application state for the R.E.K.T.A.L. lighting control GUI.
+//! Handles startup initialization, logger configuration, window icon embedding,
+//! `eframe` viewport setup, docking tab management, and high-level layout rendering.
+
 use common::logging::LogLevel::*;
 use common::logging::{FileSink, Logger, TerminalSink};
 use common::networking::messages::UserRole;
@@ -21,9 +27,14 @@ mod controller;
 mod network;
 mod panels;
 
+/// Global thread-safe channel sender for dispatching [`UiEvent`]s across the application.
 pub static UI_EVENT_SENDER: LazyLock<RwLock<Option<Sender<UiEvent>>>> =
     LazyLock::new(|| RwLock::new(None));
 
+/// Application main entry point.
+///
+/// Initializes logging sinks, embeds the window icon, configures native viewport options,
+/// and starts the `eframe` event loop with [`MyApp`].
 fn main() -> eframe::Result<()> {
     let log_path = std::env::temp_dir().join("rektal_gui.log");
     Logger::global().add_sink(Box::new(FileSink::new(log_path.to_str().unwrap_or("/tmp/rektal_gui.log"))));
@@ -59,46 +70,50 @@ fn main() -> eframe::Result<()> {
     )
 }
 
-/// The main application state.
-/// Holds the docking tree, settings flags, user credentials, network states, and channels.
+/// The main GUI application state structure.
+///
+/// Holds the docking state tree, user session parameters, network connection states,
+/// and active communication channels between threads.
 pub struct MyApp {
-    /// The docking state tree holding all tabs.
+    /// The docking state tree holding all open tabs (Terminals, Universes, etc.).
     tree: DockState<Tab>,
-    /// Whether the session settings window is visible.
+    /// Whether the session settings modal window is currently open.
     show_session_settings: bool,
-    /// Whether the connection settings window is visible.
+    /// Whether the connection settings modal window is currently open.
     show_connection_settings: bool,
-    /// The IP address and port of the target server.
+    /// The IP address and port of the target kernel server.
     server_address: String,
-    /// The currently logged-in username.
+    /// The currently authenticated username.
     username: String,
-    /// The ID assigned to the next created tab.
+    /// Counter assigned as the unique ID for the next newly created tab.
     next_tab_id: u32,
-    /// Receiver channel for incoming DMX Universe data.
+    /// Receiver channel for incoming DMX Universe packet data.
     dmx_receiver: Receiver<(u8, [u8; MAX_CHANNEL])>,
-    /// Receiver channel for incoming TCP messages from the server.
+    /// Receiver channel for incoming TCP server messages.
     tcp_listen_receiver: Option<Receiver<TcpServerMessage>>,
-    /// Sender channel for emitting UI events to the controller.
+    /// Sender channel for emitting UI events to the controller handler.
     ui_event_sender: Sender<UiEvent>,
-    /// Receiver channel for handling UI events in the controller loop.
+    /// Receiver channel for consuming UI events in the main event loop.
     ui_event_receiver: Receiver<UiEvent>,
-    /// Sender channel for sending TCP messages to the server.
+    /// Sender channel for transmitting TCP messages to the server.
     tcp_write_sender: Option<Sender<TcpClientMessage>>,
     /// The current state of the TCP network connection.
     connection_state: ConnectionState,
-    /// The currently active role of the user.
+    /// The active user role (e.g. Programmer, Showrunner).
     role: UserRole,
-    /// The password used during the login request (cleared from memory after use).
+    /// Password input buffer for authentication (cleared after login attempts).
     password: String,
-    /// Draft variable for the username, used in the settings window before applying.
+    /// Temporary draft username used in the session settings window.
     draft_username: String,
-    /// Draft variable for the role, used in the settings window before applying.
+    /// Temporary draft role selection used in the session settings window.
     draft_role: UserRole,
 }
 
 impl MyApp {
-    /// Creates a new instance of the application with default settings.
-    /// Also initializes the UDP listener for DMX data and sets up the primary communication channels.
+    /// Creates a new instance of [`MyApp`] initialized with default panels, channels, and listeners.
+    ///
+    /// # Arguments
+    /// * `ctx` - The `egui::Context` reference for UI repaint signals.
     fn new(ctx: egui::Context) -> Self {
         let (dmx_sender, dmx_receiver) = mpsc::channel();
 
@@ -139,7 +154,7 @@ impl MyApp {
         app
     }
 
-    /// Spawns the TCP client thread and connects to the configured server_address.
+    /// Spawns the TCP client background thread to connect to the configured `server_address`.
     fn connect_to_server(&mut self) {
         let (tcp_write_sender, tcp_write_receiver) = mpsc::channel();
         let (tcp_listen_sender, tcp_listen_receiver) = mpsc::channel();
@@ -170,7 +185,10 @@ impl MyApp {
         });
     }
 
-    /// Draws the top menu bar, containing the connection and session controls.
+    /// Renders the top menu bar containing connection options and window tab controls.
+    ///
+    /// # Arguments
+    /// * `ctx` - The `egui::Context` reference.
     fn draw_top_bar(&mut self, ctx: &egui::Context) {
         egui::TopBottomPanel::top("top_bar").show(ctx, |ui| {
             egui::menu::bar(ui, |ui| {
@@ -244,7 +262,10 @@ impl MyApp {
         });
     }
 
-    /// Draws the central docking panel, managing all active tabs (Terminals, Universes, etc.).
+    /// Renders the central docking area managing all active application tabs.
+    ///
+    /// # Arguments
+    /// * `ctx` - The `egui::Context` reference.
     fn draw_central_panel(&mut self, ctx: &egui::Context) {
         egui::CentralPanel::default().show(ctx, |ui| {
             let mut tab_viewer = MyTabViewer {};
@@ -254,8 +275,10 @@ impl MyApp {
         });
     }
 
-    /// Renders the Connection Settings pop-up window.
-    /// Handles spawning the TCP client thread and establishing connections.
+    /// Renders the modal window for configuring server IP address and triggering connections.
+    ///
+    /// # Arguments
+    /// * `ctx` - The `egui::Context` reference.
     fn draw_connection_settings(&mut self, ctx: &egui::Context) {
         let mut is_connection_open = self.show_connection_settings;
         let mut request_conn_close = false;
@@ -293,14 +316,16 @@ impl MyApp {
         self.show_connection_settings = is_connection_open;
     }
 
-    /// Renders the Session Settings pop-up window.
-    /// Handles inputting credentials and initiating the login sequence.
+    /// Renders the modal window for user authentication and role selection.
+    ///
+    /// # Arguments
+    /// * `ctx` - The `egui::Context` reference.
     fn draw_session_settings(&mut self, ctx: &egui::Context) {
         let mut is_session_open = self.show_session_settings;
         let mut request_close = false;
         if is_session_open {
             egui::Window::new("Session Settings")
-                .open(&mut is_session_open) // Fügt das 'X' zum Schließen hinzu
+                .open(&mut is_session_open)
                 .collapsible(false)
                 .resizable([false, false])
                 .pivot(egui::Align2::CENTER_CENTER)
@@ -386,7 +411,10 @@ impl MyApp {
         self.show_session_settings = is_session_open;
     }
 
-    /// Draws the bottom status bar, displaying connection state, user role, and software version.
+    /// Renders the bottom status bar displaying connection status indicator, username, role, and application version.
+    ///
+    /// # Arguments
+    /// * `ctx` - The `egui::Context` reference.
     fn draw_bottom_bar(&mut self, ctx: &egui::Context) {
         egui::TopBottomPanel::bottom("bottom_bar").show(ctx, |ui| {
             ui.horizontal(|ui| {
@@ -424,6 +452,10 @@ impl MyApp {
 }
 
 impl eframe::App for MyApp {
+    /// Main frame update callback invoked on every UI render pass.
+    ///
+    /// Processes queued DMX packets, network server messages, and UI events,
+    /// then renders all UI components and panels.
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         controller::handle_dmx_data(&self.dmx_receiver, &mut self.tree);
         controller::handle_incoming_network_data(
@@ -443,6 +475,10 @@ impl eframe::App for MyApp {
         self.draw_connection_settings(ctx);
         self.draw_session_settings(ctx);
     }
+
+    /// Application exit callback.
+    ///
+    /// Sends logout and disconnect requests to clean up network connections cleanly before shutdown.
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
         r_log!(Info, "Shutting down..");
 
@@ -454,6 +490,10 @@ impl eframe::App for MyApp {
     }
 }
 
+/// Parses CLI command-line arguments to extract an auto-connect target address (`-c`, `--connect`, `-conn`).
+///
+/// # Returns
+/// `Option<String>` containing the server target address if supplied in CLI arguments.
 fn parse_args() -> Option<String> {
     let args: Vec<String> = std::env::args().collect();
     let mut iter = args.iter();
@@ -468,19 +508,23 @@ fn parse_args() -> Option<String> {
     None
 }
 
+/// Custom `egui_dock::TabViewer` implementation for rendering docking tabs.
 struct MyTabViewer;
 
 impl TabViewer for MyTabViewer {
     type Tab = Tab;
 
+    /// Returns the header title for the given tab.
     fn title(&mut self, tab: &mut Self::Tab) -> egui::WidgetText {
         tab.title().into()
     }
 
+    /// Renders the inner content UI of the tab.
     fn ui(&mut self, ui: &mut egui::Ui, tab: &mut Self::Tab) {
         tab.ui(ui);
     }
 
+    /// Returns the unique `egui::Id` identifier for tab tracking.
     fn id(&mut self, tab: &mut Self::Tab) -> egui::Id {
         egui::Id::new(tab.unique_id())
     }

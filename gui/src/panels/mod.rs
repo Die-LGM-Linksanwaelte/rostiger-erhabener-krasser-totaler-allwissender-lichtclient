@@ -1,24 +1,34 @@
+//! # UI Panels Module
+//!
+//! This module defines the core panel types and docking tab structures used by the GUI interface.
+//! It exposes the [`Tab`] enum encapsulating various panel components like [`UniversePanel`] and [`TerminalPanel`].
+
 use eframe::egui;
 use common::logging::LogLevel::Error;
 use common::networking::subscription_objects::SubscribeTopic::DMXConfiguration;
 use common::r_log;
 
+/// Module implementing the interactive terminal panel tab.
 pub mod terminal;
+/// Module implementing the visual DMX universe panel tab.
 pub mod universe;
+
 use terminal::TerminalPanel;
 use universe::UniversePanel;
 use crate::controller::UiEvent;
 use crate::UI_EVENT_SENDER;
 
-///enum that contains all tabs of the application
+/// Enum representing all dockable tab types supported in the user interface.
 #[derive(Clone)]
 pub enum Tab {
+    /// Tab displaying a visual DMX universe channel grid.
     Universe(UniversePanel),
+    /// Tab displaying an interactive terminal command log.
     Terminal(TerminalPanel),
 }
 
-///implements the core functions for the Tam Enum
 impl Tab {
+    /// Returns the human-readable display title for this tab header.
     pub fn title(&self) -> String {
         match self {
             Tab::Universe(panel) => format!("Universe {}", panel.selected_universe),
@@ -26,6 +36,7 @@ impl Tab {
         }
     }
 
+    /// Returns a unique string identifier for this tab instance used by the dock state.
     pub fn unique_id(&self) -> String {
         match self {
             Tab::Universe(panel) => format!("universe_tab_{}", panel.tab_id),
@@ -33,6 +44,10 @@ impl Tab {
         }
     }
 
+    /// Renders the content UI for the active tab variant.
+    ///
+    /// # Arguments
+    /// * `ui` - Mutable reference to the `egui::Ui` context.
     pub fn ui(&mut self, ui: &mut egui::Ui) {
         match self {
             Tab::Universe(panel) => panel.ui(ui),
@@ -40,6 +55,9 @@ impl Tab {
         }
     }
 
+    /// Callback triggered when the application successfully connects and authenticates.
+    ///
+    /// Initiates necessary server subscriptions (such as requesting DMX configuration updates).
     pub fn on_connect(&mut self) {
         match self {
             Tab::Universe(_) => {

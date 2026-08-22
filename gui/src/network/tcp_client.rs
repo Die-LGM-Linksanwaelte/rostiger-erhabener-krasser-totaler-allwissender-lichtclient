@@ -1,3 +1,10 @@
+//! # TCP Client Module
+//!
+//! This module manages the TCP network connection from the GUI to the kernel server.
+//! It handles the initial handshake, asynchronous transmission of UI commands, 
+//! and continuous listening for responses (like logs or subscriptions) 
+//! using dedicated background threads.
+
 use crate::network::connection_state::{ConnectionState, SessionState};
 use common::logging::LogLevel::{Error, Info, SuccessEvent};
 use common::networking::messages::{
@@ -13,6 +20,10 @@ use std::sync::Arc;
 use std::thread;
 use crate::controller::{send_ui_event, UiEvent};
 
+/// Manages a persistent TCP connection to the kernel server.
+///
+/// The `TcpClient` encapsulates stream handles and channels. Upon starting, it spawns 
+/// separate background threads for non-blocking reading and writing of network messages.
 pub(crate) struct TcpClient {
     target: String,
     tcp_receiver: Receiver<TcpClientMessage>,
@@ -20,7 +31,12 @@ pub(crate) struct TcpClient {
 }
 
 impl TcpClient {
-    ///startPoint - This is the main entry point of the common application.
+    /// Creates a new [`TcpClient`] instance without starting it immediately.
+    ///
+    /// # Arguments
+    /// * `target` - The IP address or hostname of the target server (e.g., "127.0.0.1:6767").
+    /// * `tcp_receiver` - Channel to receive outgoing messages from the UI.
+    /// * `tcp_sender` - Channel to forward incoming messages from the server to the UI controller.
     pub(crate) fn new(
         target: String,
         tcp_receiver: Receiver<TcpClientMessage>,
@@ -33,14 +49,24 @@ impl TcpClient {
         }
     }
 
-    ///sets the connection state by sending it to the controller
+    /// Helper function to report a connection state change to the GUI controller.
+    ///
+    /// Uses the global `UI_EVENT_SENDER` to trigger a [`UiEvent::SetConnectionState`].
+    ///
+    /// # Arguments
+    /// * `state` - The new connection state to apply in the UI.
     fn set_connection_state(state: ConnectionState) {
         if let Some(sender) = crate::UI_EVENT_SENDER.read().unwrap().as_ref() {
             let _ = sender.send(UiEvent::SetConnectionState { state });
         }
     }
 
-    ///initializes the tcp client and its read and write threads
+    /// Starts the TCP client, performs the version handshake, and spawns the IO threads.
+    ///
+    /// Establishes the TCP connection and sends a `HandshakeRequest`.
+    /// On a version mismatch (`HandshakeResponse::Mismatch`), the function aborts
+    /// and sets the GUI to an `Error` state. Otherwise, the read and write threads 
+    /// are started in the background.
     pub(crate) fn start_tcp_client(&mut self) {
         r_log!(
             Info,
@@ -146,7 +172,11 @@ impl TcpClient {
         Self::write_thread(self, write_stream, is_disconnecting);
     }
 
-    ///runs the listen thread that receives the tcp messages from the kernel and sends it to the controller
+    /// Background thread: Continuously reads incoming messages from the server.
+    ///
+    /// Blocks while waiting for data, reads the 4-byte length prefix, loads the payload, 
+    /// deserializes the [`TcpServerMessage`], and forwards it to the UI controller 
+    /// via the `tcp_sender`.
     fn listen_tcp(
         mut read_stream: TcpStream,
         tcp_sender: Sender<TcpServerMessage>,
@@ -199,7 +229,10 @@ impl TcpClient {
         }
     }
 
-    ///runs the write thread, that receives the messages from the ui and sends it via tcp to the socket
+    /// Background thread: Waits for outgoing messages from the GUI and sends them.
+    ///
+    /// Receives messages from the `tcp_receiver` channel (blocking), serializes them 
+    /// into bytes, and sends them with a length prefix over the outgoing TCP stream to the kernel.
     fn write_thread(&self, mut write_stream: TcpStream, is_disconnecting: Arc<AtomicBool>) {
         while let Ok(message) = self.tcp_receiver.recv() {
             match bincode::serialize(&message) {
@@ -232,8 +265,10 @@ impl TcpClient {
         Self::close_tcp_connection(&write_stream);
     }
 
-    /// Closes the TCP connection by shutting down the stream in both directions.
-    /// Calling shutdown(Shutdown::Both) on one stream handle unblocks any reading thread on cloned handles.
+    /// Closes the TCP connection cleanly in both directions.
+    ///
+    /// Using `shutdown(Shutdown::Both)` immediately interrupts traffic and 
+    /// unblocks the reading thread so it can terminate gracefully.
     fn close_tcp_connection(stream: &TcpStream) {
         if let Err(e) = stream.shutdown(Shutdown::Both) {
             r_log!(Error, "Failed to shutdown TcpStream: {}", e);
