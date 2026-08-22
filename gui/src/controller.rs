@@ -59,9 +59,20 @@ fn process_terminal_command(
     id: u32,
     command: String,
     tcp_sender: &Option<Sender<TcpClientMessage>>,
+    tree: &mut DockState<Tab>,
 ) {
     match command.as_str() {
-        "logout" => send_ui_event(UiEvent::LogoutRequest),
+        "logout" => {
+            send_ui_event(UiEvent::LogoutRequest);
+            for (_, tab) in tree.iter_all_tabs_mut() {
+                if let Tab::Terminal(panel) = tab {
+                    panel.add_fragments(vec![TextFragment {
+                        text: "[SUCCESS] Logout successful, Terminal inactive!".to_string(),
+                        color: Color32::GREEN,
+                    }]);
+                };
+            }
+        }
         _ => {
             let msg = TcpClientMessage::ExecuteCommand {
                 response_id: id,
@@ -165,7 +176,7 @@ pub(crate) fn handle_events(
     while let Ok(event) = ui_receiver.try_recv() {
         match event {
             UiEvent::SendTerminalCommand { id, command } => {
-                process_terminal_command(id, command, tcp_sender);
+                process_terminal_command(id, command, tcp_sender, tree);
             }
             UiEvent::LoginRequest {
                 password,
@@ -214,9 +225,6 @@ pub(crate) fn handle_events(
                                 ConnectionState::Connected {
                                     session_state: LoggedIn,
                                 } => "[INFO] Logins successful, Terminal ready!",
-                                ConnectionState::Connected {
-                                    session_state: LoggedOut,
-                                } => "[INFO] Logged out! Terminal inactive!",
                                 _ => "",
                             }
                             .to_string(),
@@ -227,9 +235,6 @@ pub(crate) fn handle_events(
                                 ConnectionState::Connected {
                                     session_state: LoggedIn,
                                 } => Color32::GREEN,
-                                ConnectionState::Connected {
-                                    session_state: LoggedOut,
-                                } => Color32::LIGHT_BLUE,
                                 _ => Color32::BLACK,
                             },
                         }]);
