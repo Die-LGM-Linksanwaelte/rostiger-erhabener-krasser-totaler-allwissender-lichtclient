@@ -1,3 +1,10 @@
+//! # UDP Client / Listener Module
+//!
+//! This module handles high-speed, un-acknowledged UDP network reception.
+//! It specifically listens for incoming Art-Net DMX protocol packets (OpOutput / OpDmx)
+//! on the default port (6454), extracts DMX channel values for target universes, 
+//! and dispatches universe data frames to the UI for live rendering.
+
 use common::logging::LogLevel::*;
 use common::r_log;
 use eframe::egui;
@@ -7,10 +14,28 @@ use std::sync::mpsc::Sender;
 use std::thread;
 use std::time::Duration;
 
+/// Default UDP port defined by the Art-Net protocol specification.
 const ARTNET_PORT: u16 = 6454;
+
+/// Art-Net protocol magic header string bytes ("Art-Net\0").
 const ARTNET_HEADER: &[u8; 8] = b"Art-Net\0";
+
+/// Maximum number of DMX channels per universe according to DMX512 standard.
 pub const MAX_CHANNEL: usize = 512;
 
+/// Binds a UDP socket and spawns a background thread to listen for incoming Art-Net DMX packets.
+///
+/// Filters incoming UDP datagrams for valid Art-Net magic headers and OpDmx opcode (0x5000).
+/// Extracted DMX frames are sent to the UI via `dmx_sender`, and an `egui::Context::request_repaint()`
+/// is triggered to update the universe display immediately.
+///
+/// # Arguments
+/// * `port` - Optional UDP port to bind to (defaults to Art-Net port 6454 if `None`).
+/// * `dmx_sender` - Channel sender to transmit `(universe_id, dmx_data_array)` tuples to the controller.
+/// * `ctx` - `egui::Context` reference used to request UI repaints upon packet arrival.
+///
+/// # Returns
+/// `io::Result<()>` indicating whether the UDP socket binding was successful.
 pub fn start_udp_listener(
     port: Option<u16>,
     dmx_sender: Sender<(u8, [u8; MAX_CHANNEL])>,
@@ -46,7 +71,7 @@ pub fn start_udp_listener(
                                 );
 
                                 if let Err(e) = dmx_sender.send((universe_id, dmx_data_array)) {
-                                    r_log!(Error, "Error sending DMX-Data: {}", e);
+                                    r_log!(Info, "DMX channel closed, stopping UDP listener: {}", e);
                                     break;
                                 } else {
                                     ctx.request_repaint();
@@ -71,10 +96,22 @@ pub fn start_udp_listener(
     Ok(())
 }
 
+/// Helper function to check if a received byte slice begins with the standard Art-Net header.
+///
+/// # Arguments
+/// * `data` - Raw incoming packet byte buffer.
+///
+/// # Returns
+/// `true` if the packet is at least 10 bytes long and starts with `"Art-Net\0"`.
 fn is_artnet_packet(data: &[u8]) -> bool {
     data.len() >= 10 && &data[0..8] == ARTNET_HEADER
 }
 
+/// Fallback handler for non-Art-Net UDP datagrams received on the socket.
+///
+/// # Arguments
+/// * `data` - Raw packet byte payload.
+/// * `src` - Sender socket address.
 fn handle_generic_packet(data: &[u8], src: std::net::SocketAddr) {
-    println!("Received other UDP-Packet {}: {} Bytes", src, data.len());
+    r_log!(Info, "Received other UDP-Packet {}: {} Bytes", src, data.len());
 }

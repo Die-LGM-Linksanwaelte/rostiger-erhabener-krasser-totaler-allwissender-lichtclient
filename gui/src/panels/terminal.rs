@@ -1,3 +1,9 @@
+//! # Terminal Panel Module
+//!
+//! This module implements the interactive Terminal UI panel for the R.E.K.T.A.L. GUI application.
+//! It displays a scrollable log history of colored text fragments ([`TextFragment`]), supports command 
+//! history navigation using the arrow keys, and dispatches user commands to the central controller.
+
 use crate::controller::UiEvent;
 use crate::UI_EVENT_SENDER;
 use common::logging::LogLevel::*;
@@ -5,39 +11,45 @@ use common::r_log;
 use eframe::egui;
 use eframe::egui::Color32;
 
-/// A structure representing a single, colored piece of text.
+/// Represents a single piece of text with an associated display color.
 #[derive(Clone)]
 pub struct TextFragment {
+    /// The string content of the fragment.
     pub text: String,
+    /// The color used to render this fragment in the terminal log output.
     pub color: Color32,
 }
 
-/// The structure holding the state of the terminal panel.
+/// UI Panel managing the interactive terminal tab state and rendering.
 #[derive(Clone)]
 pub struct TerminalPanel {
+    /// Unique tab identifier hosting this terminal panel instance.
     pub tab_id: u32,
+    /// Current input text entered in the terminal command line.
     input_text: String,
+    /// History of output lines, where each line consists of multiple [`TextFragment`]s.
     history: Vec<Vec<TextFragment>>,
+    /// Record of previously executed commands for arrow key navigation.
     command_history: Vec<String>,
+    /// Maximum number of output lines retained in history.
     history_length: usize,
+    /// Pointer index for navigating through `command_history`.
     position_in_history: usize,
+    /// Visibility state of the terminal panel settings window.
     settings_open: bool,
+    /// Temporary text edit buffer for settings inputs.
     settings_text: String,
+    /// Indicates whether the terminal is active and accepting user input (e.g. when authenticated).
+    pub(crate) is_active: bool,
 }
 
 impl TerminalPanel {
-    /// Creates a new instance of the terminal panel.
+    /// Creates a new [`TerminalPanel`] instance for the specified tab ID.
+    ///
+    /// # Arguments
+    /// * `tab_id` - Unique identifier of the host tab.
     pub fn new(tab_id: u32) -> Self {
-        let initial_line = vec![
-            TextFragment {
-                text: "> ".to_string(),
-                color: Color32::GRAY,
-            },
-            TextFragment {
-                text: "Konsole bereit...".to_string(), //TODO: erst printen, wenn connection established ist
-                color: Color32::RED,
-            },
-        ];
+        let initial_line = vec![];
         Self {
             tab_id,
             input_text: String::new(),
@@ -47,16 +59,20 @@ impl TerminalPanel {
             position_in_history: 0,
             settings_open: false,
             settings_text: String::new(),
+            is_active: false,
         }
     }
 
-    /// Adds a multi-colored line (a collection of fragments) to the terminal history.
+    /// Appends a multi-colored line composed of [`TextFragment`]s to the terminal output history.
+    ///
+    /// # Arguments
+    /// * `fragments` - A vector of colored text fragments representing one line of log output.
     pub fn add_fragments(&mut self, fragments: Vec<TextFragment>) {
         self.history.push(fragments);
         self.enforce_history_length();
     }
 
-    /// Helper method to ensure the history does not exceed the configured maximum length.
+    /// Truncates the terminal output history if it exceeds `history_length`.
     fn enforce_history_length(&mut self) {
         if self.history.len() > self.history_length {
             let excess = self.history.len() - self.history_length;
@@ -64,10 +80,12 @@ impl TerminalPanel {
         }
     }
 
-    /// Draws the top bar of the terminal, including the title and settings button.
+    /// Renders the top bar of the terminal panel, including the settings gear button.
+    ///
+    /// # Arguments
+    /// * `ui` - Mutable reference to the `egui::Ui` context.
     fn draw_top_bar(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
-            ui.label(egui::RichText::new("Terminal").strong());
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui.button("⚙").on_hover_text("Settings").clicked() {
                     self.settings_open = true;
@@ -77,7 +95,10 @@ impl TerminalPanel {
         });
     }
 
-    /// Draws the settiui_event_senderngs window if it is currently open.
+    /// Renders the modal settings window for configuring maximum history length.
+    ///
+    /// # Arguments
+    /// * `ui` - Mutable reference to the `egui::Ui` context.
     fn draw_settings_window(&mut self, ui: &mut egui::Ui) {
         if self.settings_open {
             let mut is_open = self.settings_open;
@@ -113,7 +134,12 @@ impl TerminalPanel {
         }
     }
 
-    /// Draws the central panel containing the scrollable terminal history.
+    /// Renders the central scrollable area containing formatted log history lines.
+    ///
+    /// Automatically scrolls and sticks to the bottom when new output lines arrive.
+    ///
+    /// # Arguments
+    /// * `ui` - Mutable reference to the `egui::Ui` context.
     fn draw_central_panel(&mut self, ui: &mut egui::Ui) {
         egui::CentralPanel::default().show_inside(ui, |ui| {
             egui::ScrollArea::vertical()
@@ -131,7 +157,12 @@ impl TerminalPanel {
         });
     }
 
-    /// Draws the bottom input panel where users can enter commands.
+    /// Renders the bottom command prompt input field.
+    ///
+    /// Dispatches [`UiEvent::SendTerminalCommand`] on Enter press and handles Up/Down arrow key history navigation.
+    ///
+    /// # Arguments
+    /// * `ui` - Mutable reference to the `egui::Ui` context.
     fn draw_input_panel(&mut self, ui: &mut egui::Ui) {
         egui::TopBottomPanel::bottom("terminal_input_panel")
             .resizable(false)
@@ -141,7 +172,8 @@ impl TerminalPanel {
                     ui.label("> ");
                     let response = ui.add(
                         egui::TextEdit::singleline(&mut self.input_text)
-                            .desired_width(f32::INFINITY),
+                            .desired_width(f32::INFINITY)
+                            .interactive(self.is_active),
                     );
 
                     if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
@@ -198,11 +230,14 @@ impl TerminalPanel {
             });
     }
 
-    /// Renders the UI logic for the terminal panel.
+    /// Main entry point to render the entire terminal panel layout.
+    ///
+    /// # Arguments
+    /// * `ui` - Mutable reference to the `egui::Ui` context.
     pub fn ui(&mut self, ui: &mut egui::Ui) {
-        self.draw_top_bar(ui);
         self.draw_settings_window(ui);
         self.draw_central_panel(ui);
         self.draw_input_panel(ui);
+        self.draw_top_bar(ui);
     }
 }

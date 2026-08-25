@@ -1,10 +1,11 @@
 use std::fmt;
 use std::fmt::Formatter;
-use std::hash::{DefaultHasher, Hash, Hasher};
 use serde::{Deserialize, Serialize};
 use crate::logging::LogLevel;
-use crate::cli::CliAction;
-use crate::networking::connection_engine::SessionID;
+use crate::cli_actions::{CliAction, CliActionResponse};
+use crate::networking::subscription_objects::{SubscribeTopic, UpdateMode, TopicPayload};
+
+pub type SessionID = u64;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct HandshakeRequest {
@@ -17,19 +18,6 @@ pub struct HandshakeRequest {
 pub enum HandshakeResponse {
     Ok,
     Mismatch { server_version: String },
-}
-
-//TODO: Add better topics when we know wich topics are subscribe worthy
-#[derive(Serialize, Deserialize, Debug)]
-pub enum SubscribeTopic {
-    Universes,
-    FixturePositions,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub enum UpdateMode {
-    OnChange,
-    Continuous,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -74,7 +62,7 @@ pub enum TcpClientMessage {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum TcpServerMessage {
     //Answer when sending anything without being logged in
     Unauthenticated,
@@ -96,10 +84,14 @@ pub enum TcpServerMessage {
         answer: (LogLevel, String),
         response_id: u32
     },
+    
+    ImplicitCommandOutput {
+        answer: CliActionResponse,
+        response_id: u32
+    },
 
     TopicUpdate {
-        topic: SubscribeTopic,
-        data: Vec<u8>
+        data: TopicPayload,
     },
 
     EditGranted {
@@ -111,19 +103,21 @@ pub enum TcpServerMessage {
         resource: EditableResource,
         reason: String
     },
+
+    ShutdownAnnouncement,
 }
 
 
 
 //Dummy Enum until I implement it right
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum EditableResource {
     Cuelist,
 }
 
 //This is only Temporarily here, will be moved to a different location once this location is programmed
 //Also, Interface may not belong here, that's why ist commented out, since it should be handled differently than the GUIs
-#[derive(PartialEq, Serialize, Deserialize, Debug, Copy, Clone)]
+#[derive(Serialize, Deserialize, Debug, Copy, Clone, PartialEq)]
 pub enum UserRole {
     Programmer,
     BlindProgrammer,
@@ -144,7 +138,5 @@ impl fmt::Display for UserRole {
 }
 
 pub fn get_protocol_version() -> String {
-    let mut hasher = DefaultHasher::new();
-    include_bytes!("messages.rs").hash(&mut hasher);
-    hasher.finish().to_string()
+    env!("PROTOCOL_HASH").to_string()
 }

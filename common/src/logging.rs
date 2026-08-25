@@ -1,9 +1,10 @@
-use std::{fmt, fs, io};
+use std::{fmt, fs, io, thread};
 use std::fs::{File, OpenOptions};
 use std::path::Path;
 use std::fmt::Formatter;
-use std::io::{Write};
-use std::sync::{Mutex, OnceLock, RwLock};
+use std::io::Write;
+use std::sync::{mpsc, Arc, Mutex, OnceLock, RwLock};
+use std::sync::mpsc::Sender;
 use chrono::{DateTime, Local};
 use serde::{Deserialize, Serialize};
 
@@ -37,6 +38,7 @@ impl fmt::Display for LogLevel {
 pub struct LogMessage {
     pub level: LogLevel,
     pub text: String,
+    pub timestamp: DateTime<Local>,
 }
 
 pub trait LogSink: Send + Sync {
@@ -44,14 +46,33 @@ pub trait LogSink: Send + Sync {
 }
 
 pub struct Logger {
-    sinks: RwLock<Vec<Box<dyn LogSink>>>
+    sinks: Arc<RwLock<Vec<Box<dyn LogSink>>>>,
+    log_tx: Sender<LogMessage>,
 }
 
 impl Logger {
     pub fn global() -> &'static Logger {
         static LOGGER: OnceLock<Logger> = OnceLock::new();
-        LOGGER.get_or_init(|| Logger {
-            sinks: RwLock::new(Vec::new()),
+        LOGGER.get_or_init(|| {
+            let (tx, rx) = mpsc::channel::<LogMessage>();
+            let sinks = Arc::new(RwLock::new(Vec::<Box<dyn LogSink>>::new()));
+
+            let thread_sinks = sinks.clone();
+
+            thread::spawn(move || {
+                while let Ok(msg) = rx.recv() {
+                    if let Ok(locked_sinks) = thread_sinks.read() {
+                        for sink in locked_sinks.iter() {
+                            sink.receive(&msg);
+                        }
+                    }
+                }
+            });
+
+            Logger {
+                sinks,
+                log_tx: tx,
+            }
         })
     }
 
@@ -60,20 +81,20 @@ impl Logger {
     }
 
     pub fn dispatch(&self, level: LogLevel, text: String) {
-        let msg = LogMessage { level, text };
+        let msg = LogMessage {
+            level,
+            text,
+            timestamp: Local::now(),
+        };
 
-        if let Ok(sinks) = self.sinks.read() {
-            for sink in sinks.iter() {
-                sink.receive(&msg);
-            }
-        }
+        let _ = self.log_tx.send(msg);
     }
 }
 
 #[macro_export]
 macro_rules! r_log {
     ($level:expr, $($arg:tt)*) => {
-        $crate::logging::Logger::global().dispatch($level, format!($($arg)*));
+        $crate::logging::Logger::global().dispatch($level, format!($($arg)*))
     }
 }
 
@@ -95,7 +116,7 @@ impl LogSink for TerminalSink {
         let width = crossterm::terminal::size()
             .map(|(width, _height)| (width as usize).saturating_sub(2).min(500) )
             .unwrap_or(80);
-        let time = Local::now().format("%H:%M:%S");
+        let time = message.timestamp.format("%H:%M:%S");
         let raw_line = format!("({}) [{:-^12}] {}", time, message.level.to_string(), message.text);
 
         let is_system_message = color.contains("\x1B[4");
@@ -169,7 +190,7 @@ impl FileSink {
 
 impl LogSink for FileSink {
     fn receive(&self, message: &LogMessage) {
-        let time = Local::now().format("%H:%M:%S");
+        let time = message.timestamp.format("%H:%M:%S");
 
         let log_line = format!("({}) [{:-^12}] {}\n", time, message.level.to_string(), message.text);
 

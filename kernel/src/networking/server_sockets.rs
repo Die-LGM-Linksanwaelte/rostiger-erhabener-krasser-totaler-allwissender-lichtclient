@@ -1,15 +1,19 @@
 use std::io::{Read, Write};
 use std::net::{Shutdown, TcpListener, TcpStream};
-use std::{thread};
+use std::thread;
 use std::sync::atomic::Ordering;
 use std::sync::mpsc;
 use std::sync::mpsc::{Receiver,Sender};
 use rand::{RngExt};
+use common::r_log;
+use common::logging::LogLevel::*;
+use common::networking::messages::{HandshakeRequest, HandshakeResponse, SessionID, TcpClientMessage, TcpServerMessage};
+use common::networking::messages::TcpServerMessage::{CommandOutput, ImplicitCommandOutput, LogoutOk};
+use common::networking::subscription_objects::UpdateMode;
+use crate::networking::connection_engine::{ClientSession, ConnectionID, NEXT_CONNECTION_ID, SERVER_STATE};
+use crate::networking::subscriptions::add_subscription;
 use crate::cli::command_parsing::run_command;
-use crate::logging::LogLevel::*;
-use crate::networking::connection_engine::{ClientSession, ConnectionID, SessionID, NEXT_CONNECTION_ID, SERVER_STATE};
-use crate::networking::messages::{HandshakeRequest, HandshakeResponse, SubscribeTopic, TcpClientMessage, TcpServerMessage, UpdateMode};
-use crate::networking::messages::TcpServerMessage::{CommandOutput, LogoutOk};
+use crate::cli::execute_implicit_cli_action;
 
 pub fn activate_socket(port: u16) {
     let address = format!("0.0.0.0:{}", port);
@@ -90,21 +94,31 @@ enum HandshakeError {
 }
 
 fn check_version_compatibility(stream: &mut TcpStream) -> Result<(), HandshakeError> {
-    let mut buffer = [0; 1024];
-
-    let bytes = match stream.read(&mut buffer) {
-        Ok(0) => return Err(HandshakeError::InvalidData("Connection was terminated instantly".into())),
-        Ok(b) => b,
-        Err(e) => return Err(HandshakeError::InvalidData(format!("Read-Error: {}", e)))
+    let mut len_buffer = [0u8; 4];
+    let mut buffer = match stream.read_exact(&mut len_buffer) {
+        Ok(_) => {
+            let msg_len = u32::from_be_bytes(len_buffer) as usize;
+            vec![0u8; msg_len]
+        },
+        Err(e) => {
+            return Err(HandshakeError::InvalidData(format!("Len-Read Error: {}", e)));
+        }
     };
 
-    match bincode::deserialize::<HandshakeRequest>(&buffer[..bytes]) {
+    let bytes = match stream.read_exact(&mut buffer) {
+        Err(e) => {
+            return Err(HandshakeError::InvalidData(format!("Read Error: {}", e)));
+        }
+        Ok(_) => buffer
+    };
+
+    match bincode::deserialize::<HandshakeRequest>(&bytes) {
         Ok(request) => {
             if request.magic_string != "REKTAL" {
                 return Err(HandshakeError::InvalidData("Wrong magic string. Client is not an Rektal-Client".into()));
             }
 
-            let server_hash = crate::networking::messages::get_protocol_version();
+            let server_hash = common::networking::messages::get_protocol_version();
             let server_version = env!("CARGO_PKG_VERSION").to_string();
 
             if request.protocol_hash != server_hash {
@@ -112,7 +126,11 @@ fn check_version_compatibility(stream: &mut TcpStream) -> Result<(), HandshakeEr
                     server_version: server_version.clone(),
                 };
 
-                let _ = stream.write(&bincode::serialize(&response).unwrap());
+                let payload = bincode::serialize(&response).unwrap();
+                let len = payload.len() as u32;
+
+                stream.write_all(&len.to_be_bytes()).unwrap();
+                stream.write_all(&payload).unwrap();
 
                 Err(HandshakeError::VersionMismatch {
                     server_version,
@@ -120,7 +138,10 @@ fn check_version_compatibility(stream: &mut TcpStream) -> Result<(), HandshakeEr
                 })
             } else {
                 let response = HandshakeResponse::Ok;
-                let _ = stream.write(&bincode::serialize(&response).unwrap());
+                let payload = bincode::serialize(&response).unwrap();
+                let len = payload.len() as u32;
+                stream.write_all(&len.to_be_bytes()).unwrap();
+                stream.write_all(&payload).unwrap();
 
                 Ok(())
             }
@@ -132,23 +153,40 @@ fn check_version_compatibility(stream: &mut TcpStream) -> Result<(), HandshakeEr
 }
 
 fn read_thread(stream: &mut TcpStream, connection_id: ConnectionID, tx_channel: &Sender<TcpServerMessage>) {
-    let mut buffer = [0; 1024];
+    let mut len_buffer = [0u8; 4];
     let mut token: Option<SessionID> = None;
 
     loop {
-        let bytes = match stream.read(&mut buffer) {
-            Ok(0) => {
-                r_log!(SuccessEvent,"[Conn {}] Client disconnected successfully", connection_id);
-                break;
-            }
+        let mut buffer = match stream.read_exact(&mut len_buffer) {
+            Ok(_) => {
+                let msg_len = u32::from_be_bytes(len_buffer) as usize;
+                vec![0u8; msg_len]
+            },
             Err(e) => {
-                r_log!(Warning,"[Conn {}] Connection error : {}", connection_id, e);
+                if e.kind() == std::io::ErrorKind::UnexpectedEof {
+                    if token.is_none() {
+                        r_log!(SuccessEvent,"[Conn {}] Client disconnected successfully", connection_id);
+                    } else {
+                        r_log!(Error, "[Conn {}] Client disconnected without logging out. Session is still active",
+                            connection_id
+                        );
+                    }
+                } else {
+                    r_log!(Error, "[Conn {}] Length of read-stream-error: {}", connection_id, e);
+                }
                 break;
             }
-            Ok(bytes) => bytes
         };
 
-        let msg = bincode::deserialize::<TcpClientMessage>(&buffer[..bytes]).unwrap();
+        let bytes = match stream.read_exact(&mut buffer) {
+            Err(e) => {
+                r_log!(Error,"[Conn {}] Connection error : {}", connection_id, e);
+                break;
+            }
+            Ok(_) => buffer
+        };
+
+        let msg = bincode::deserialize::<TcpClientMessage>(&bytes).unwrap();
         r_log!(Info,"[Conn {}] Received Enum: {:?}", connection_id, msg);
 
         token = update_login_status(&msg, token, &tx_channel, connection_id);
@@ -168,7 +206,7 @@ fn read_thread(stream: &mut TcpStream, connection_id: ConnectionID, tx_channel: 
             TcpClientMessage::Logout => { unreachable!() },
 
             _ => {
-                if let Some(response) = handle_messages(msg, connection_id) {
+                if let Some(response) = handle_messages(msg, connection_id, token.unwrap()) {
                     if let Err(e) = tx_channel.send(response) {
                         r_log!(Error,"[Conn {}] Got error while sending response to channel: {}", connection_id, e);
                     }
@@ -206,6 +244,14 @@ fn write_thread(rx_channel: Receiver<TcpServerMessage>, mut write_stream: TcpStr
     while let Ok(message) = rx_channel.recv() {
         match bincode::serialize(&message) {
             Ok(serialized_response) => {
+                let len = serialized_response.len() as u32;
+
+                if let Err(e) = write_stream.write_all(&len.to_be_bytes()) {
+                    r_log!(Warning,"[Conn {}] Got error while sending len to Client: {} Stopped write-Thread",
+                             connection_id, e);
+                    break;
+                }
+
                 if let Err(e) = write_stream.write_all(&serialized_response) {
                     r_log!(Warning,"[Conn {}] Got error while sending to Client: {} Stopped write-Thread",
                              connection_id, e);
@@ -260,6 +306,7 @@ fn update_login_status(
                     user_name: user_name.clone(),
                     user_role: *user_role,
                     active_connection: Some((tx_channel.clone(), connection_id)),
+                    subscriptions: vec![]
                 });
 
                 r_log!(SuccessEvent,"[Conn {}] Logged in with Session-Token {}", connection_id, new_token);
@@ -295,7 +342,7 @@ fn update_login_status(
                 session.active_connection = Some((tx_channel.clone(), connection_id));
 
                 if *clear_subscriptions {
-                    //TODO Clear Subscriptions, wenn die Infrastruktur dafür da ist
+                    session.subscriptions.clear();
                 }
 
                 r_log!(SuccessEvent,"[Conn {}] User with ID {} relogged in  successfully", connection_id, user_id);
@@ -332,44 +379,38 @@ fn update_login_status(
     new_token
 }
 
-fn handle_messages(msg: TcpClientMessage, connection_id: ConnectionID) -> Option<TcpServerMessage> {
+fn handle_messages(msg: TcpClientMessage, connection_id: ConnectionID, token: SessionID) -> Option<TcpServerMessage> {
     match msg {
         TcpClientMessage::Login {..} | TcpClientMessage::Logout | TcpClientMessage::Relogin {..} => unreachable!(),
 
 
         TcpClientMessage::Subscribe {topic, update_mode} => {
-            let topic_name = match topic {
-                SubscribeTopic::FixturePositions => "Fixture Positions",
-                SubscribeTopic::Universes => "Universes",
-            };
+            add_subscription(&token, &topic, &update_mode);
             r_log!(Info,"[Conn {}] {}", connection_id, match update_mode {
-                UpdateMode::OnChange => format!("Der Client will über Änderungen von {} erfahren!", topic_name),
-                UpdateMode::Continuous => format!("Der Client will über {} auf dem laufenden gehalten werden", topic_name),
+                UpdateMode::OnChange => format!("Der Client will über Änderungen von {} erfahren!", topic),
+                UpdateMode::Continuous => format!("Der Client will über {} auf dem laufenden gehalten werden", topic),
             }); //TODO Normally we always should respond to this
             None
         }
 
         TcpClientMessage::Unsubscribe { topic } => {
-            r_log!(Info,"[Conn {}] Der Client will nichts von {} wissen.", connection_id, match topic {
-                SubscribeTopic::FixturePositions => "Fixture Positions",
-                SubscribeTopic::Universes => "Universes",
-            });
+            r_log!(Info,"[Conn {}] Der Client will nichts von {} wissen.", connection_id, topic );
             None
         }
 
         TcpClientMessage::ExecuteCommand{ command, response_id} => {
-            let answer = run_command(command);
+            let answer = run_command(false, command);
             r_log!(answer.0, "{}", answer.1);
             Some(CommandOutput{
                 answer,
                 response_id
             })
         }
-        
+
         TcpClientMessage::ExecuteImplicitCommand { command, response_id} => {
-            let answer = command.execute();
-            r_log!(answer.0, "{}", answer.1);
-            Some(CommandOutput {
+            let answer = execute_implicit_cli_action(&command);
+            //TODO Add logging for this
+            Some(ImplicitCommandOutput {
                 answer,
                 response_id
             })
@@ -380,7 +421,7 @@ fn handle_messages(msg: TcpClientMessage, connection_id: ConnectionID) -> Option
             None
         }
 
-        TcpClientMessage::SubmitEdit {resource, new_data} => {
+        TcpClientMessage::SubmitEdit {resource:_, new_data:_} => {
             r_log!(Info,"[Conn {}] Yo, der Nutzer ist fertig mit Resource, yo", connection_id);
             None
         }
