@@ -276,6 +276,7 @@ pub(crate) fn handle_events(
                 }
             }
             UiEvent::SetConnectionState { state } => {
+                r_log!(Info, "New ConnectionState: {}", state);
                 for (_, tab) in tree.iter_all_tabs_mut() {
                     if state
                         == (ConnectionState::Connected {
@@ -289,27 +290,12 @@ pub(crate) fn handle_events(
                             == (ConnectionState::Connected {
                                 session_state: LoggedIn,
                             });
-                        panel.add_fragments(vec![TextFragment {
-                            text: match &state {
-                                ConnectionState::Disconnected | ConnectionState::Error => {
-                                    "[ERROR] There was an Error with the connection!"
-                                }
-                                ConnectionState::Connected {
-                                    session_state: LoggedIn,
-                                } => "[INFO] Logins successful, Terminal ready!",
-                                _ => "",
-                            }
-                            .to_string(),
-                            color: match &state {
-                                ConnectionState::Disconnected | ConnectionState::Error => {
-                                    Color32::RED
-                                }
-                                ConnectionState::Connected {
-                                    session_state: LoggedIn,
-                                } => Color32::GREEN,
-                                _ => Color32::BLACK,
-                            },
-                        }]);
+                        if state == (ConnectionState::Connected{session_state: LoggedIn}) {
+                            panel.add_fragments(vec![TextFragment {
+                                text: "[INFO] Logins successful, Terminal ready!".to_string(),
+                                color: Color32::GREEN,
+                            }]);
+                        }
                     }
                 }
                 *connection_state = state;

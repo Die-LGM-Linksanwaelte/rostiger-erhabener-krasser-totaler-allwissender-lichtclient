@@ -13,7 +13,7 @@ use eframe::egui;
 
 /// UI Panel representing a single DMX universe view in the docking interface.
 ///
-/// Displays a responsive grid of 512 DMX channels ([`MAX_CHANNEL`]), supports switching 
+/// Displays a responsive grid of 512 DMX channels ([`MAX_CHANNEL`]), supports switching
 /// between universes 1 through 16, and dynamically renders patched fixture overlays.
 #[derive(Clone)]
 pub struct UniversePanel {
