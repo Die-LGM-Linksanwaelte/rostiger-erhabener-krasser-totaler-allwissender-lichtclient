@@ -29,7 +29,7 @@ use sysinfo::{ProcessesToUpdate, System};
 ///
 /// Returns an [`eframe::Result`] if native window creation or event loop initialization fails.
 fn main() -> eframe::Result<()> {
-    Logger::global().add_sink(Box::new(FileSink::new("/tmp/rektal_launcher.log")));
+    Logger::global().add_sink(Box::new(FileSink::new("rektal_launcher.log")));
     Logger::global().add_sink(Box::new(TerminalSink { cli_prompt: None }));
 
     let options = eframe::NativeOptions {
@@ -137,7 +137,9 @@ impl LauncherApp {
 
                 ui.add_space(5.0);
 
-                if ui.button("▶ Start Kernel").clicked() {
+
+
+                if ui.add_enabled(!self.is_kernel_active(), egui::Button::new("▶ Start Kernel")).clicked() {
                     if !self.is_kernel_active() {
                         match spawn_kernel(&[], self.show_kernel_console) {
                             Ok(_) => {
@@ -186,7 +188,7 @@ impl LauncherApp {
 
                 ui.add_space(5.0);
 
-                if ui.button("▶ Start GUI").clicked() {
+                if ui.add_enabled(!self.is_gui_active(), egui::Button::new("▶ Start GUI")).clicked() {
                     match spawn_gui(&[], self.show_gui_console) {
                         Ok(_) => {
                             self.status_msg = "GUI successfully spawned!".to_string();
