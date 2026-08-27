@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use crate::fixture::{ChannelIndex, ChannelValue, FixtureError, MAX_CHANNEL, MAX_FINE_DEGREES};
 use crate::fixture::color::ColorPropertyType;
 
-/// A single Scheißprogrammhannel with an optional fine channel for 16-bit control.
+/// A single DMX-Channel with an optional fine channel for 16-bit control.
 #[derive(Clone)]
 pub struct Channel {
     pub(crate) value: ChannelValue,
@@ -14,17 +14,21 @@ pub struct Channel {
 }
 
 impl Channel {
-    /// Creates a new [`Channel`], offsetting the channel number(s) by `device_channel`.
+    /// Creates a new [`Channel`] and shifts its channel indices to the correct absolute position.
+    ///
+    /// The provided `channel_numbers` are assumed to be zero-based (relative to the fixture).
+    /// This method automatically shifts them using `device_channel` as the new starting address.
     ///
     /// # Arguments
     ///
-    /// * `channel_numbers` - Coarse channel and optional fine channel, relative to the device
-    /// * `default_value`   - Initial 16-bit value
-    /// * `device_channel`  - DMX offset of the device within its universe
+    /// * `channel_numbers` - A [`ChannelParameter`] containing the relative coarse and fine channels.
+    /// * `default_value`   - The initial 16-bit value for this channel.
+    /// * `device_channel`  - The absolute DMX start address of the device within its universe.
     ///
     /// # Errors
     ///
-    /// Returns [`ChannelError`] if the resulting channel number exceeds [`MAX_CHANNEL`].
+    /// Returns a [`ChannelOutOfRange-Error`](ChannelError::ChannelOutOfRange) if shifting causes any channel number
+    /// to exceed [`MAX_CHANNEL`].
     pub(crate) fn new(
         channel_numbers: ChannelParameter,
         default_value: ChannelValue,
@@ -41,6 +45,21 @@ impl Channel {
     }
 
     //TODO Add the option to have some fixtures go over Universe-Borders
+    /// Safely calculates a new absolute DMX address for a single channel when a fixture is moved.
+    ///
+    /// It determines the relative distance of the channel from the `old_start` address
+    /// and reapplies this relative position to the `new_start` address.
+    ///
+    /// # Arguments
+    ///
+    /// * `channel`   - The current absolute channel index to be moved.
+    /// * `old_start` - The previous DMX start address of the fixture.
+    /// * `new_start` - The new DMX start address of the fixture.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`ChannelOutOfRange-Error`](ChannelError::ChannelOutOfRange) if the newly calculated channel address
+    /// exceeds [`MAX_CHANNEL`].
     fn move_single_channel(
         channel: ChannelIndex, old_start: ChannelIndex, new_start: ChannelIndex
     ) -> Result<ChannelIndex, ChannelError> {
@@ -54,7 +73,18 @@ impl Channel {
             .ok_or(ChannelError::ChannelOutOfRange)
     }
 
-    pub fn move_channels(&mut self, old_start: ChannelIndex, new_start: ChannelIndex) -> Result<(), ChannelError> {
+    /// Shifts all associated channel indices (coarse and fine) to a new DMX start address.
+    ///
+    /// # Arguments
+    ///
+    /// * `old_start` - The previous DMX start address of the fixture.
+    /// * `new_start` - The new DMX start address to shift the channels to.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`ChannelOutOfRange-Error`](ChannelError::ChannelOutOfRange) if the shift causes any of the
+    /// underlying channels to exceed the universe boundaries.
+    pub(super) fn move_channels(&mut self, old_start: ChannelIndex, new_start: ChannelIndex) -> Result<(), ChannelError> {
         self.channel.move_indices(old_start, new_start)?;
         Ok(())
     }
@@ -62,7 +92,7 @@ impl Channel {
 
     /// Returns the coarse DMX output value as `Vec<(channel_index, 8-bit value)>` . If fine, ultra, uber, ... channels
     /// exist, then they are also part of the Return-Value
-    pub fn get_all_values(&self) -> Vec<(ChannelIndex, u8)> {
+    pub(super) fn get_all_values(&self) -> Vec<(ChannelIndex, u8)> {
         let bytes = self.value.to_be_bytes();
 
         self.channel.get_channel_indices()
@@ -72,16 +102,111 @@ impl Channel {
             .collect()
     }
 
+    /// Returns a copy of the internal array containing all configured channel indices.
     pub fn get_channel_indices(&self) -> ArrayVec<ChannelIndex, MAX_FINE_DEGREES> {
         self.channel.get_channel_indices()
     }
 
+    /// Determines the default startup value for a given `SimplePropertyType`.
+    ///
+    /// To prevent fixtures from moving wildly on startup, spatial attributes like `Pan`
+    /// and `Tilt` are initialized to their center positions (`ChannelValue::MAX / 2`).
+    /// All other simple properties default to `0`.
+    ///
+    /// # Arguments
+    ///
+    /// * `property_type` - The [`SimplePropertyType`] for which to determine the default value.
     pub(super) fn get_default_value(property_type: SimplePropertyType) -> ChannelValue {
         match property_type {
             SimplePropertyType::Pan => ChannelValue::MAX / 2,
             SimplePropertyType::Tilt => ChannelValue::MAX / 2,
             _ => 0,
         }
+    }
+}
+
+
+/// Represents a DMX-Channel parameter, managing the base channel and its fine-degree channels.
+/// It uses an `ArrayVec` to store the coarse channel alongside optional fine channels up to [`MAX_FINE_DEGREES`].
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ChannelParameter {
+    channel: ArrayVec<ChannelIndex, MAX_FINE_DEGREES>
+}
+
+impl ChannelParameter {
+    /// Initializes a new `ChannelParameter` with a single, coarse channel index.
+    ///
+    /// # Arguments
+    ///
+    /// * `channel_index` - The base (coarse) channel index to initialize the parameter with.
+    pub fn new(channel_index: ChannelIndex) -> Self {
+        let mut channel = ArrayVec::new();
+        channel.push(channel_index);
+        Self {
+            channel,
+        }
+    }
+
+    /// Adds a fine-degree channel to the parameter.
+    ///
+    /// The fine channels must be added in sequential order. The length of the internal
+    /// channel array dictates which fine degree is expected next.
+    ///
+    /// # Arguments
+    ///
+    /// * `fine_degree` - The degree level of the fine channel (e.g., 1 for fine, 2 for ultra-fine).
+    /// * `fine_index`  - The specific DMX-Channel index for this fine degree.
+    ///
+    /// # Errors
+    ///
+    /// * [`FineDegreeOutOfRange`]((ChannelError::FineDegreeOutOfRange) - If the requested degree exceeds `MAX_FINE_DEGREES`.
+    /// * [`FineDegreeExists`](ChannelError::FineDegreeExists) - If a channel for this fine degree has already been added.
+    /// * [`FineDegreeTooHigh`](ChannelError::FineDegreeTooHigh) - If you attempt to add a higher fine degree before adding the intermediate ones.
+    pub fn add_fine(&mut self, fine_degree: usize, fine_index: ChannelIndex) -> Result<(), ChannelError> {
+        if fine_degree > MAX_FINE_DEGREES {
+            return Err(ChannelError::FineDegreeOutOfRange(fine_degree));
+        }
+
+        let required_len = fine_degree;
+
+        if self.channel.len() == required_len {
+            self.channel.push(fine_index);
+            Ok(())
+        } else if self.channel.len() > required_len {
+            Err(ChannelError::FineDegreeExists(fine_degree))
+        } else {
+            Err(ChannelError::FineDegreeTooHigh(fine_degree))
+        }
+    }
+
+    /// Shifts all managed channel indices to a new starting address.
+    ///
+    /// The method calculates the relative position of each channel based on the `old_start`
+    /// and updates them relative to the `new_start`.
+    ///
+    /// # Arguments
+    ///
+    /// * `old_start` - The current DMX start address used as the baseline for the shift.
+    /// * `new_start` - The target DMX start address to move the indices to.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`ChannelOutOfRange-Error`](ChannelError::ChannelOutOfRange) if applying the new start address causes any
+    /// channel index to exceed the maximum allowed limit ([`MAX_CHANNEL`]).
+    fn move_indices(&mut self, old_start: ChannelIndex, new_start: ChannelIndex) -> Result<(), ChannelError> {
+        let channels = &mut self.channel;
+
+        for channel_index in channels.iter_mut() {
+            *channel_index = Channel::move_single_channel(*channel_index, old_start, new_start)?;
+        }
+
+        Ok(())
+    }
+
+    /// Returns a cloned `ArrayVec` containing all absolute channel indices (coarse and fine)
+    /// currently held by this parameter.
+    pub(super) fn get_channel_indices(&self) -> ArrayVec<ChannelIndex, MAX_FINE_DEGREES> {
+        self.channel.clone()
     }
 }
 
@@ -148,6 +273,20 @@ pub enum PropertyType {
 }
 
 impl PropertyType {
+
+    /// Parses a raw string slice into a strongly typed `PropertyType`.
+    ///
+    /// It sequentially attempts to match the input string against known `ColorPropertyType`
+    /// variants first, and then falls back to `SimplePropertyType` variants.
+    ///
+    /// # Arguments
+    ///
+    /// * `property_type` - A string slice representing the name of the property to parse.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`InvalidPropertyType-Error`](FixtureError::InvalidPropertyType) if the string matches neither
+    /// a color nor a simple property.
     pub fn from_str(property_type: &str) -> Result<PropertyType, FixtureError> {
         if let Ok(property_type) = ColorPropertyType::from_string(property_type) {
             Ok(PropertyType::Color(property_type))
@@ -168,53 +307,20 @@ impl Display for PropertyType {
     }
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ChannelParameter {
-    channel: ArrayVec<ChannelIndex, MAX_FINE_DEGREES>
-}
-
-impl ChannelParameter {
-    pub fn new(channel_index: ChannelIndex) -> Self {
-        let mut channel = ArrayVec::new();
-        channel.push(channel_index);
-        Self {
-            channel,
-        }
-    }
-
-    pub fn add_fine(&mut self, fine_degree: usize, fine_index: ChannelIndex) -> Result<(), ChannelError> {
-        if fine_degree > MAX_FINE_DEGREES {
-            return Err(ChannelError::FineDegreeOutOfRange(fine_degree));
-        }
-
-        let required_len = fine_degree;
-
-        if self.channel.len() == required_len {
-            self.channel.push(fine_index);
-            Ok(())
-        } else if self.channel.len() > required_len {
-            Err(ChannelError::FineDegreeExists(fine_degree))
-        } else {
-            Err(ChannelError::FineDegreeTooHigh(fine_degree))
-        }
-    }
-
-    pub fn move_indices(&mut self, old_start: ChannelIndex, new_start: ChannelIndex) -> Result<(), ChannelError> {
-        let channels = &mut self.channel;
-
-        for channel_index in channels.iter_mut() {
-            *channel_index = Channel::move_single_channel(*channel_index, old_start, new_start)?;
-        }
-
-        Ok(())
-    }
-
-    pub fn get_channel_indices(&self) -> ArrayVec<ChannelIndex, MAX_FINE_DEGREES> {
-        self.channel.clone()
-    }
-}
-
 impl SimplePropertyType {
+    /// Attempts to parse a string identifier into a `SimplePropertyType`.
+    ///
+    /// Custom or manufacturer-specific properties can be parsed if they are
+    /// prefixed with `other_` (e.g., `other_gobo_shake`).
+    ///
+    /// # Arguments
+    ///
+    /// * `s` - The raw string identifier to parse into a simple property.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`InvalidPropertyType-Error`](FixtureError::InvalidPropertyType) if the string does not match
+    /// any known simple property and lacks the `other_` prefix.
     fn from_string(s: &str) -> Result<SimplePropertyType, FixtureError> {
         match s {
             "dimmer" => Ok(SimplePropertyType::Dimmer),
@@ -275,7 +381,7 @@ impl Display for SimplePropertyType {
     }
 }
 
-/// Errors that can occur when reserving or accessing Scheißprogrammhannels.
+/// Errors that can occur when reserving or accessing DMX-Channels.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ChannelError {
     /// The channel number exceeds [`MAX_CHANNEL`].

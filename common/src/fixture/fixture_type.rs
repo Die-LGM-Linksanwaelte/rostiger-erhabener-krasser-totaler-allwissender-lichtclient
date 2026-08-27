@@ -4,9 +4,9 @@ use crate::fixture::color::ColorType;
 use crate::fixture::{ChannelError, FixtureError, FIXTURE_TYPE_LIST, MAX_CHANNEL};
 use crate::fixture::channel::{ChannelParameter, PropertyType, SimplePropertyType};
 
-/// A template defining the Scheißprogrammhannel layout for a type of lighting fixture.
+/// A template defining the DMX-Channel layout for a type of lighting fixture.
 ///
-/// Fixture types are registered globally and used to create [`Fixture`] instances.
+/// Fixture types are registered globally and used to create [`crate::fixture::Fixture`] instances.
 /// See [`FixtureType::new`] for how properties are parsed and validated.
 #[derive(Debug,Serialize,Deserialize)]
 pub struct FixtureType {
@@ -25,19 +25,21 @@ impl FixtureType {
     /// # Usage
     ///
     /// Register a fixture type first with [`FixtureType::new`], then create
-    /// instances of it with [`Fixture::new`].
+    /// instances of it with [`crate::fixture::Fixture::new`].
     ///
     /// # Arguments
     ///
-    /// * `name`       - Unique name for this fixture type
-    /// * `properties` - Map of property names to `(coarse_channel, optional_fine_channel)`
+    /// * `name`        - Unique name for this fixture type.
+    /// * `properties` - Map of property types to their corresponding [`ChannelParameter`] layout.
     ///
     /// # Errors
     ///
-    /// * [`FixtureError::ChannelError(ChannelAlreadyInUse)`] – if two properties share a channel
-    /// * [`FixtureError::ChannelError(ChannelOutOfRange)`] – if a channel exceeds [`MAX_CHANNEL`]
-    /// * [`FixtureError::InvalidPropertyType`] – if a property name is not recognized
-    /// * [`FixtureError::FixtureTypeNameAlreadyInUse`] – if the name is already registered
+    /// * [`InvalidPropertyType`](FixtureError::InvalidPropertyType) – if a property name is not recognized.
+    /// * [`FixtureTypeNameAlreadyInUse`](FixtureError::FixtureTypeNameAlreadyInUse) – if the name is already 
+    /// registered.
+    /// * [`ChannelAlreadyInUse`](ChannelError::ChannelAlreadyInUse) – if two properties share a channel.
+    /// * [`ChannelOutOfRange`](ChannelError::ChannelOutOfRange) – if a channel exceeds [`MAX_CHANNEL`].
+
     pub fn new(
         name: String,
         properties: HashMap<PropertyType, ChannelParameter>,

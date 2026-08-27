@@ -2,7 +2,10 @@ use std::cmp::{max, min, PartialEq};
 use std::fmt::{Display, Formatter};
 use serde::{Deserialize, Serialize};
 use OutputType::{CMY, HSV, RGB};
-use crate::fixture::{Channel, ChannelError, ChannelIndex, ChannelValue, FixtureError, FloatChannelValue, PropertyType, SignedChannelValue};
+use crate::fixture::{
+    Channel, ChannelError, ChannelIndex, ChannelValue, FixtureError, FloatChannelValue, PropertyType,
+    SignedChannelValue
+};
 use crate::fixture::channel::ChannelParameter;
 
 
@@ -10,7 +13,7 @@ use crate::fixture::channel::ChannelParameter;
 /// Represents a color with its channel values for all supported color models
 /// (RGB, CMY, and HSV).
 #[derive(Clone)]
-pub struct Color {
+pub(super) struct Color {
     output_type: OutputType,
     color1: Option<Channel>,
     color2: Option<Channel>,
@@ -29,10 +32,10 @@ pub struct Color {
 /// A color template used by [`FixtureType`] to define how colors are
 /// generated for fixtures of that type.
 ///
-/// Each color channel holds a DMX value and an optional second value
-/// for fine-grained 16-bit control
+/// Each color channel holds a [`ChannelParameter`] defining the coarse
+/// and optional fine-grained control channels.
 #[derive(Debug, Serialize, Deserialize)]
-pub struct ColorType {
+pub(super) struct ColorType {
     output_type: Option<OutputType>,
     color1: Option<ChannelParameter>,
     color2: Option<ChannelParameter>,
@@ -60,6 +63,12 @@ pub enum ColorPropertyType {
 }
 
 impl ColorPropertyType {
+    /// Maps a color slot number (1, 2, or 3) and an [`OutputType`] model to its corresponding [`ColorPropertyType`].
+    ///
+    /// # Arguments
+    ///
+    /// * `color_number` - The slot index (1 to 3) within the color model.
+    /// * `output_type`  - The color model (`RGB`, `CMY`, or `HSV`).
     fn new(color_number: u8, output_type: OutputType) -> Option<ColorPropertyType> {
         match (color_number, output_type) {
             (1, RGB) => Some(ColorPropertyType::Red),
@@ -78,6 +87,7 @@ impl ColorPropertyType {
         }
     }
 
+    /// Maps a [`ColorPropertyType`] back to its underlying slot number and color model (`OutputType`).
     fn to_output_type(&self) -> (u8, OutputType) {
         match self {
             ColorPropertyType::Red => (1, RGB),
@@ -94,17 +104,17 @@ impl ColorPropertyType {
         }
     }
 
-    /// Parses a [`ColorPropertyType`] from a string.
+    /// Parses a raw string slice into a strongly typed [`ColorPropertyType`].
     ///
     /// # Arguments
     ///
-    /// * `property` - The property name (e.g. `"red"`, `"hue"`, `"saturation"`)
+    /// * `property` - The property name string (e.g. `"red"`, `"hue"`, `"saturation"`).
     ///
     /// # Errors
     ///
     /// Returns [`FixtureError::InvalidPropertyType`] if `property` does not
     /// match any known color property.
-    pub fn from_string(property: &str) -> Result<ColorPropertyType, FixtureError> {
+    pub(super) fn from_string(property: &str) -> Result<ColorPropertyType, FixtureError> {
         match property {
             "red" => Ok(ColorPropertyType::Red),
             "green" => Ok(ColorPropertyType::Green),
@@ -138,8 +148,8 @@ impl Display for ColorPropertyType {
 
 impl ColorType {
 
-    /// Creates an empty [`ColorType`] with no output type or channels set.
-    pub fn new() -> Self {
+    /// Creates an empty [`ColorType`] template with no output type or channels set.
+    pub(super) fn new() -> Self {
         Self {
             output_type: None,
             color1: None,
@@ -148,19 +158,18 @@ impl ColorType {
         }
     }
 
-    /// Parses a color channel name and assigns its DMX value to the corresponding slot.
+    /// Adds a color channel parameter to the template and validates color model compatibility.
     ///
-    /// Accepts `"red"`, `"green"`, `"blue"` (RGB), `"cyan"`, `"magenta"`, `"yellow"` (CMY),
-    /// or `"hue"`, `"saturation"`, `"value"` (HSV).
+    /// # Arguments
     ///
-    /// Returns `Ok(true)` if the channel was recognized and set, `Ok(false)` if the
-    /// channel name is unknown.
+    /// * `s`     - The [`ColorPropertyType`] being added.
+    /// * `value` - The [`ChannelParameter`] defining the channel addresses.
     ///
     /// # Errors
     ///
     /// Returns [`FixtureError::MultipleColorOutputTypes`] if the channel belongs to a
     /// different color model than one already assigned (e.g. mixing RGB and HSV).
-    pub fn checked_add_channel(&mut self, s: ColorPropertyType, value: ChannelParameter) -> Result<(), FixtureError> {
+    pub(super) fn checked_add_channel(&mut self, s: ColorPropertyType, value: ChannelParameter) -> Result<(), FixtureError> {
         let (new_type, slot) = match s {
             ColorPropertyType::Red          => (RGB, 1),
             ColorPropertyType::Green        => (RGB, 2),
@@ -197,32 +206,28 @@ impl ColorType {
         Ok(())
     }
 
-    /// Returns `true` if at least one color channel has been set.
-    pub fn exists(&self) -> bool {
+    /// Returns `true` if at least one color channel (i.e., an output type) has been configured.
+    pub(super) fn exists(&self) -> bool {
         self.output_type.is_some()
     }
 }
 
 impl Color {
 
-    /// Creates a [`Color`] from a [`ColorType`] template and reserves the required DMXChannels.
-    ///
-    /// Called internally by [`Fixture::new`].
+    /// Creates a [`Color`] instance from a [`ColorType`] template and initializes its DMX-Channels.
     ///
     /// The default channel value depends on the color model: CMY channels default to
-    /// `u16::MAX` (full), all others default to `0`.
+    /// `ChannelValue::MAX` (subtractive base), while RGB and HSV default to `0`.
     ///
     /// # Arguments
     ///
-    /// * `color_type`      - The template defining which channels and color model to use
-    /// * `device_channel`  - The DMXChannel offset of the device
-    /// * `universe`        - The DMX universe to reserve channels in
-    /// * `fixture_name`    - The fixture name, used for channel reservation
+    /// * `color_type`     - The template defining which channels and color model to use.
+    /// * `device_channel` - The absolute DMX start address offset of the device.
     ///
     /// # Errors
     ///
-    /// Returns a [`ChannelError`] if any channel could not be created or reserved.
-    pub fn new(color_type: &ColorType, device_channel: u16) -> Result<Self, ChannelError> {
+    /// Returns [`ChannelError::ChannelOutOfRange`] if any underlying channel exceeds the maximum allowed channel limit.
+    pub(super) fn new(color_type: &ColorType, device_channel: u16) -> Result<Self, ChannelError> {
         let default_value = if color_type.output_type == Some(CMY) {
             ChannelValue::MAX
         } else if let Some(_) = color_type.output_type {
@@ -263,7 +268,8 @@ impl Color {
         })
     }
 
-    pub(crate) fn get_channels_as_iter(&self) -> impl Iterator<Item = (PropertyType, &Channel)> {
+    /// Returns an iterator over all active property types and immutable references to their channels.
+    pub(super) fn get_channels_as_iter(&self) -> impl Iterator<Item = (PropertyType, &Channel)> {
         let c1 = self.color1.as_ref().map(|c| (
             PropertyType::Color(ColorPropertyType::new(1, self.output_type).unwrap()),
             c
@@ -282,7 +288,8 @@ impl Color {
         vec![c1, c2, c3].into_iter().flatten()
     }
 
-    pub fn get_channels_as_iter_mut(&mut self) -> impl Iterator<Item = (PropertyType, &mut Channel)> {
+    /// Returns an iterator over all active property types and mutable references to their channels.
+    pub(super) fn get_channels_as_iter_mut(&mut self) -> impl Iterator<Item = (PropertyType, &mut Channel)> {
         let c1 = self.color1.as_mut().map(|c| (
             PropertyType::Color(ColorPropertyType::new(1, self.output_type).unwrap()),
             c
@@ -301,7 +308,7 @@ impl Color {
         vec![c1, c2, c3].into_iter().flatten()
     }
 
-
+    /// Synchronizes the internal unified color model state with the individual channel values (`color1`, `color2`, `color3`).
     fn set_color(&mut self) {
         let (v1, v2, v3) = match self.output_type {
             RGB => (self.red, self.green, self.blue),
@@ -319,6 +326,13 @@ impl Color {
         }
     }
 
+    /// Updates internal color states using RGB values and automatically computes equivalent CMY and HSV values.
+    ///
+    /// # Arguments
+    ///
+    /// * `red`   - The red channel value.
+    /// * `green` - The green channel value.
+    /// * `blue`  - The blue channel value.
     fn set_rgb(&mut self, red: ChannelValue, green: ChannelValue, blue: ChannelValue) {
         self.red = red;
         self.green = green;
@@ -358,6 +372,13 @@ impl Color {
         self.set_color()
     }
 
+    /// Updates internal color states using HSV values and converts them into equivalent RGB and CMY values.
+    ///
+    /// # Arguments
+    ///
+    /// * `hue`        - The hue value.
+    /// * `saturation` - The saturation value.
+    /// * `value`      - The brightness/value component.
     fn set_hsv(&mut self, hue: ChannelValue, saturation: ChannelValue, value: ChannelValue) {
         self.hue = hue;
         self.saturation = saturation;
@@ -390,12 +411,17 @@ impl Color {
         self.set_color()
     }
 
-    /// Sets a single color property and updates all DMXChannels accordingly.
+    /// Sets a single color property and updates all DMX-Channels accordingly.
     ///
-    /// CMY values are converted to RGB internally (`u16::MAX - value`),
+    /// CMY values are converted to RGB internally (`ChannelValue::MAX - value`),
     /// HSV values are converted to RGB via [`Color::set_hsv`].
     /// RGB values are converted to HSV via ['Color::set_rgb']
-    pub fn set(&mut self, property: ColorPropertyType, value: ChannelValue) {
+    ///
+    /// # Arguments
+    ///
+    /// * `property` - The specific [`ColorPropertyType`] to modify.
+    /// * `value`    - The new [`ChannelValue`] to assign.
+    pub(super) fn set(&mut self, property: ColorPropertyType, value: ChannelValue) {
         let (color_number, output_type) = property.to_output_type();
 
         let (mut value1, mut value2, mut value3) = match output_type {
@@ -427,9 +453,8 @@ impl Color {
 
     /// Returns the current DMX output values of all active color channels.
     ///
-    /// Each entry is a `(value, channel_index)` pair. For channels with 16-bit
-    /// fine control, two entries are returned — coarse first, then fine.
-    pub fn get_values(&self) -> Vec<(ChannelIndex, u8)> {
+    /// Each entry is a `(channel_index, 8-bit value)` pair via [`Channel::get_all_values`].
+    pub(super) fn get_values(&self) -> Vec<(ChannelIndex, u8)> {
         let mut output = Vec::new();
 
         if let Some(c) = self.color1.as_ref() {

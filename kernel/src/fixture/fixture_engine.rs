@@ -4,43 +4,49 @@ use std::hash::{DefaultHasher, Hash, Hasher};
 use std::sync::{mpsc, OnceLock};
 use std::sync::mpsc::{Receiver, Sender};
 use std::thread;
-use common::fixture::{ChannelError, ChannelIndex, ChannelValue, Fixture, FixtureError, PropertyType, MAX_CHANNEL};
+use common::fixture::{ChannelIndex, ChannelValue, Fixture, FixtureError, PropertyType, MAX_CHANNEL};
 use common::fixture::ChannelError::{ChannelAlreadyInUse, UniverseOutOfRange};
-use common::fixture::fixture_command::FixtureCommand;
-use common::fixture::FixtureError::InvalidFixture;
+use crate::fixture::fixture_command::FixtureCommand;
+use common::fixture::FixtureError::{DmxStateDesync, InvalidFixture};
 use common::logging::LogLevel::{Error, Info};
 use common::networking::subscription_objects::{DMXConfigForClientState, DMXConfigurationForClient};
 use common::{r_debug_log, r_log};
 use crate::fixture::fixture_engine::ChannelReservation::{Empty, Pending, Reserved};
 use crate::networking::on_dmx_config_update;
 
-/// Represents the reservation state of a single Scheißprogrammhannel.
+/// Represents the reservation state of a single DMX-Channel.
 ///
 /// * **Empty** – Channel is not in use.
-/// * **Pending(T)** – Channel has been claimed by a fixture but not yet finalized.
-/// * **Reserved(T, U)** – Channel is fully reserved by a fixture with an associated property.
+/// * **Pending(String)** – Channel has been claimed by a fixture but not yet finalized.
+/// * **Reserved(String, PropertyType, usize)** – Channel is fully reserved by a fixture with an associated property.
 #[derive(Clone, Debug)]
-pub enum ChannelReservation<T, U> {
+enum ChannelReservation {
     Empty,
-    Pending(T),
-    Reserved(T, U, usize),
+    Pending(String),
+    Reserved(String, PropertyType, usize),
 }
 
+/// The core engine managing fixture instances, thread synchronization, and DMX channel reservations.
 pub struct FixtureEngine {
     fixtures: HashMap<String, Fixture>,
-
-    dmx_config: Vec<[ChannelReservation<String, PropertyType>; MAX_CHANNEL as usize]>,
-
+    dmx_config: Vec<[ChannelReservation; MAX_CHANNEL as usize]>,
     receiver: Receiver<FixtureCommand>,
 }
 
-pub static FIXTURE_ACTION_SENDER: OnceLock<Sender<FixtureCommand>> = OnceLock::new();
+/// Global static sender channel used to dispatch asynchronous commands to the running `FixtureEngine`.
+static FIXTURE_ACTION_SENDER: OnceLock<Sender<FixtureCommand>> = OnceLock::new();
 
 impl FixtureEngine {
+
+    /// Spawns the fixture engine actor thread and returns an interface receiver channel for updates.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the engine has already been started (preventing multiple instances).
     pub fn spawn() -> Result<Receiver<(usize,Vec<Fixture>)>, &'static str > {
 
         if FIXTURE_ACTION_SENDER.get().is_some() {
-            return Err("Kryptischer Fehler: Die DMX-Engine wurde bereits gestartet!");
+            return Err("Critical Error: The fixture engine has already been started!");
         }
 
         let (tx, rx) = mpsc::channel();
@@ -52,7 +58,7 @@ impl FixtureEngine {
         };
 
         if FIXTURE_ACTION_SENDER.set(tx).is_err() {
-            return Err("Race Condition: Engine wurde parallel gestartet!");
+            return Err("Race condition: Engine was started in parallel!");
         }
 
         let (interface_sender, interface_receiver) = mpsc::channel();
@@ -66,6 +72,11 @@ impl FixtureEngine {
         Ok(interface_receiver)
     }
 
+    /// Main event loop processing incoming commands and triggering state notifications.
+    ///
+    /// # Arguments
+    ///
+    /// * `interface_sender` - Channel used to broadcast updated fixture lists and universe counts to the runtime.
     fn run(&mut self, interface_sender: Sender<(usize,Vec<Fixture>)>) {
         while let Ok(command) = self.receiver.recv() {
             let mut dmx_config_changed = false;
@@ -96,7 +107,7 @@ impl FixtureEngine {
                 }
 
                 FixtureCommand::SetProperty {fixture_name, property, value, reply_to} => {
-                    let result = self.set_fixture(fixture_name, property, value);
+                    let result = self.set_property(fixture_name, property, value);
                     reply_to.send(result.clone()).unwrap();
                     if result.is_ok() {
                         dmx_values_changed = true;
@@ -122,6 +133,24 @@ impl FixtureEngine {
         }
     }
 
+    /// Creates and registers a new fixture instance, verifying and reserving its DMX channels.
+    ///
+    /// # Arguments
+    ///
+    /// * `name`              - Unique name for the fixture instance
+    /// * `fixture_type_name` - Template name of the registered fixture type
+    /// * `start_channel`     - DMX channel offset within the universe
+    /// * `start_universe`    - Target DMX universe index (0-based)
+    ///
+    /// # Errors
+    ///
+    /// * [`FixtureNameAlreadyInUse`](FixtureError::FixtureNameAlreadyInUse) – if the name is already taken
+    /// * [`InvalidFixtureType`](FixtureError::InvalidFixtureType) - if `fixture_type_name` is not registered
+    /// * [`ChannelAlreadyInUse`] – if required channels overlap with existing
+    /// * [`ChannelOutOfRange`](ChannelError::ChannelOutOfRange) - if any required channel is out of bounds
+    /// ([MAX_CHANNEL]).
+    /// * [`UniverseOutOfRange`] - if the fixture is in a non-existent universe
+    /// * [`DmxStateDesync`] - if the DMX-State and the fixture registry are out of sync
     fn new_fixture(
         &mut self, name: String, fixture_type_name: String, start_channel: ChannelIndex, start_universe: usize
     ) -> Result<(), FixtureError> {
@@ -171,10 +200,7 @@ impl FixtureEngine {
                     }
 
                     _ => {
-                        r_log!(Error, "Unexpected channel state ({:?}) while reserving channel for {}. \
-                        This should never happen.",
-                            universe[ch_index], name);
-                        return Ok::<(), ChannelError>(());
+                        return Err(DmxStateDesync);
                     }
                 }
             }
@@ -185,13 +211,29 @@ impl FixtureEngine {
         Ok(())
     }
 
+    /// Relocates an existing fixture to a new channel and/or universe.
+    ///
+    /// # Arguments
+    ///
+    /// * `name`          - Name of the fixture to move
+    /// * `new_channel`   - New starting DMX channel index
+    /// * `new_universe`  - New target DMX universe index (0-based)
+    ///
+    /// # Errors
+    ///
+    /// * [`InvalidFixture`] – if the fixture name is not found
+    /// * [`ChannelAlreadyInUse`] – if the new target channels are blocked
+    /// * [`ChannelOutOfRange`](ChannelError::ChannelOutOfRange) - if the new channel range is out of bounds
+    /// * [`UniverseOutOfRange`] - if the fixture is in a non-existent universe
+    /// * [`DmxStateDesync`] - if the DMX-State and the fixture registry are out of sync
     fn move_fixture(
         &mut self, name: String, new_channel: ChannelIndex, new_universe: usize
     ) -> Result<(), FixtureError> {
 
         self.ensure_universe_size(new_universe + 1);
 
-        let mut fixture_original = self.fixtures.get_mut(&name).ok_or(InvalidFixture(name.clone()))?.clone();
+        let mut fixture_original = self.fixtures.get_mut(&name).ok_or(InvalidFixture(name.clone()))?
+            .clone();
 
 
         let mut fixture_clone = fixture_original.clone();
@@ -218,7 +260,7 @@ impl FixtureEngine {
         }).map_err(FixtureError::from)?;
 
         // Remove old Reservations
-        self.remove_reservations(&name, &mut fixture_original)?;
+        self.remove_reservations(&mut fixture_original)?;
 
         // Reserve final
         fixture_clone.iter_over_properties().try_for_each(|(property, channel)| {
@@ -242,10 +284,7 @@ impl FixtureEngine {
                     }
 
                     _ => {
-                        r_log!(Error, "Unexpected channel state ({:?}) while reserving channel for {}. \
-                        This should never happen.",
-                            universe[ch_index], name);
-                        return Ok::<(), ChannelError>(());
+                        return Err(DmxStateDesync)
                     }
                 }
             }
@@ -257,10 +296,22 @@ impl FixtureEngine {
 
         Ok(())
     }
+
+    /// Removes a fixture instance and frees its associated DMX channel reservations.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Name of the fixture to remove
+    ///
+    /// # Errors
+    ///
+    /// * [`InvalidFixture`] – if the fixture does not exist
+    /// * [`UniverseOutOfRange`] - if the fixture is in a non-existent universe
+    /// * [`DmxStateDesync`] - if the DMX-State and the fixture registry are out of sync
     fn remove_fixture(&mut self, name: String) -> Result<(), FixtureError> {
         let mut fixture = self.fixtures.remove(&name).ok_or(InvalidFixture(name.clone()))?;
 
-        if let Err(e) = self.remove_reservations(&name, &mut fixture) {
+        if let Err(e) = self.remove_reservations(&mut fixture) {
 
             //Rollback
             self.fixtures.insert(name, fixture);
@@ -270,7 +321,19 @@ impl FixtureEngine {
         Ok(())
     }
 
-    fn set_fixture(&mut self, name: String, property: PropertyType, value: ChannelValue) -> Result<(), FixtureError> {
+    /// Updates a specific property value on an active fixture.
+    ///
+    /// # Arguments
+    ///
+    /// * `name`     - Name of the target fixture
+    /// * `property` - Property type to update
+    /// * `value`    - New raw channel value
+    ///
+    /// # Errors
+    ///
+    /// * [`InvalidFixture`] – if the fixture is not found
+    /// * [`MissingProperty`](FixtureError::MissingProperty) – if the fixture lacks the specified property
+    fn set_property(&mut self, name: String, property: PropertyType, value: ChannelValue) -> Result<(), FixtureError> {
 
         let fixture = self.fixtures.get_mut(&name).ok_or(InvalidFixture(name.clone()))?;
 
@@ -279,6 +342,15 @@ impl FixtureEngine {
         Ok(())
     }
 
+    /// Retrieves the fixture type name for a given fixture instance string.
+    ///
+    /// # Arguments
+    ///
+    /// * `name` - Name of the fixture instance
+    ///
+    /// # Errors
+    ///
+    /// * [`InvalidFixture`] – if no fixture with this name exists
     fn get_fixture_type_from_string(&self, name: String) -> Result<String, FixtureError> {
         match self.fixtures.get(&name) {
             None => Err(InvalidFixture(name)),
@@ -286,13 +358,29 @@ impl FixtureEngine {
         }
     }
 
+    /// Ensures that the internal DMX configuration vector has at least the given size (universes).
+    ///
+    /// # Arguments
+    ///
+    /// * `size` - Required minimum number of universes
     fn ensure_universe_size(&mut self, size: usize) {
         if size > self.dmx_config.len() {
             self.dmx_config.resize_with(size, || std::array::from_fn(|_| Empty));
         }
     }
 
-    fn remove_reservations(&mut self, name: &String, fixture: &mut Fixture) -> Result<(), FixtureError> {
+    /// Clears all DMX channel reservations for a specific fixture.
+    ///
+    /// # Arguments
+    ///
+    /// * `fixture` - Reference to the fixture instance
+    ///
+    /// # Errors
+    ///
+    /// * [`UniverseOutOfRange`] - if the fixture is in a non-existent universe
+    /// * [`DmxStateDesync`] - if the DMX-State and the fixture registry are out of sync
+    fn remove_reservations(&mut self, fixture: &mut Fixture) -> Result<(), FixtureError> {
+        let name = fixture.get_name();
         fixture.iter_over_properties().try_for_each(|(_, channel)| {
             let universe = self.dmx_config.get_mut(fixture.get_universe())
                 .ok_or(UniverseOutOfRange)?;
@@ -301,10 +389,7 @@ impl FixtureEngine {
                 match &universe[channel as usize] {
                     Reserved(existing, _, _) if *existing == *name => {}
                     _ => {
-                        r_log!(Error, "Unexpected channel state ({:?}) while removing reservations for {}. \
-                        This should never happen.",
-                            universe[channel as usize], name);
-                        return Ok::<(), ChannelError>(());
+                        return Err(DmxStateDesync);
                     }
                 }
                 universe[channel as usize] = Empty;
@@ -315,7 +400,7 @@ impl FixtureEngine {
         Ok(())
     }
 
-
+    /// Generates a snapshot of the current DMX configuration mapped for client subscription updates.
     fn get_dmx_config_for_client(&self) -> DMXConfigForClientState{
         self.dmx_config.iter().map(|universe| {
             universe.iter().map(|channel| {
@@ -350,6 +435,25 @@ impl FixtureEngine {
     }
 }
 
+/// Creates and registers a new fixture instance, verifying and reserving its DMX channels.
+///
+/// # Arguments
+///
+/// * `name`              - Unique name for the fixture instance
+/// * `fixture_type_name` - Template name of the registered fixture type
+/// * `start_channel`     - DMX channel offset within the universe
+/// * `start_universe`    - Target DMX universe index (0-based)
+///
+/// # Errors
+///
+/// * [`FixtureNameAlreadyInUse`](FixtureError::FixtureNameAlreadyInUse) – if the name is already taken
+/// * [`InvalidFixtureType`](FixtureError::InvalidFixtureType) - if `fixture_type_name` is not registered
+/// * [`ChannelAlreadyInUse`] – if required channels overlap with existing
+/// * [`ChannelOutOfRange`](ChannelError::ChannelOutOfRange) - if any required channel is out of bounds
+/// ([MAX_CHANNEL]).
+/// * [`UniverseOutOfRange`] - if the fixture is in a non-existent universe
+/// * [`DmxStateDesync`] - if the DMX-State and the fixture registry are out of sync
+
 pub fn new_fixture(
     name: String, fixture_type_name: String, start_channel: ChannelIndex, start_universe: usize
 ) -> Result<(), FixtureError> {
@@ -369,6 +473,21 @@ pub fn new_fixture(
     reply_rx.recv().unwrap()
 }
 
+/// Relocates an existing fixture to a new channel and/or universe.
+///
+/// # Arguments
+///
+/// * `name`          - Name of the fixture to move
+/// * `new_channel`   - New starting DMX channel index
+/// * `new_universe`  - New target DMX universe index (0-based)
+///
+/// # Errors
+///
+/// * [`InvalidFixture`] – if the fixture name is not found
+/// * [`ChannelAlreadyInUse`] – if the new target channels are blocked
+/// * [`ChannelOutOfRange`](ChannelError::ChannelOutOfRange) - if the new channel range is out of bounds
+/// * [`UniverseOutOfRange`] - if the fixture is in a non-existent universe
+/// * [`DmxStateDesync`] - if the DMX-State and the fixture registry are out of sync
 pub fn move_fixture(name: String, new_channel: ChannelIndex, new_universe: usize) -> Result<(), FixtureError> {
     let (reply_tx, reply_rx) = mpsc::channel();
 
@@ -385,6 +504,17 @@ pub fn move_fixture(name: String, new_channel: ChannelIndex, new_universe: usize
     reply_rx.recv().unwrap()
 }
 
+/// Removes a fixture instance and frees its associated DMX channel reservations.
+///
+/// # Arguments
+///
+/// * `name` - Name of the fixture to remove
+///
+/// # Errors
+///
+/// * [`InvalidFixture`] – if the fixture does not exist
+/// * [`UniverseOutOfRange`] - if the fixture is in a non-existent universe
+/// * [`DmxStateDesync`] - if the DMX-State and the fixture registry are out of sync
 pub fn remove_fixture(name: String) -> Result<(), FixtureError> {
     let (reply_tx, reply_rx) = mpsc::channel();
 
@@ -399,6 +529,18 @@ pub fn remove_fixture(name: String) -> Result<(), FixtureError> {
     reply_rx.recv().unwrap()
 }
 
+/// Updates a specific property value on an active fixture.
+///
+/// # Arguments
+///
+/// * `fixture_name` - Name of the target fixture
+/// * `property` - Property type to update
+/// * `value` - New raw channel value
+///
+/// # Errors
+///
+/// * [`InvalidFixture`] – if the fixture is not found
+/// * [`MissingProperty`](FixtureError::MissingProperty) – if the fixture lacks the specified property
 pub fn set_property(fixture_name: String, property: PropertyType, value: ChannelValue) -> Result<(), FixtureError> {
     let (reply_tx, reply_rx) = mpsc::channel();
 
@@ -415,6 +557,15 @@ pub fn set_property(fixture_name: String, property: PropertyType, value: Channel
     reply_rx.recv().unwrap()
 }
 
+/// Retrieves the fixture type name for a given fixture instance string.
+///
+/// # Arguments
+///
+/// * `name` - Name of the fixture instance
+///
+/// # Errors
+///
+/// * [`InvalidFixture`] – if no fixture with this name exists
 pub fn get_fixture_type(fixture_name: String) -> Result<String, FixtureError> {
     let (reply_tx, reply_rx) = mpsc::channel();
 

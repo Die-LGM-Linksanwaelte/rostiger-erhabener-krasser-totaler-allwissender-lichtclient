@@ -11,16 +11,18 @@ use common::r_log;
 const TARGET: &str = "255.255.255.255:6454";
 const FREQUENCY: u64 = 23;
 
-/// Trait that should be implemented by all interfaces. For now, there is no possibility to modularly create a
-/// DmxInterface. TODO
+//TODO
+/// Defines the baseline behavior for any hardware or network DMX output interface.
+///
+/// **Note:** Currently, the system hardcodes ArtNet output. Future refactoring
+/// will allow modular instantiation of multiple interface types via this trait.
 pub trait DmxInterface {
-    /// Sends universes to fixtures.
+    /// Dispatches a single DMX universe to the connected lighting fixtures.
     ///
     /// # Arguments
     ///
-    /// * 'local_universe_index' - If an interface can output more than one universe, this parameter is set to the
-    ///                            universe we want to output on (0-indexed)
-    /// * 'data' - An Array with all the DMX-values of the universe we want to output
+    /// * `local_universe_index` - The 0-based index of the universe to output on (useful for multi-universe nodes).
+    /// * `data` - A full 512-byte array representing the computed DMX channel values for this universe.
     fn send_universe(
         &self,
         local_universe_index: u16,
@@ -28,10 +30,18 @@ pub trait DmxInterface {
     ) -> Result<(), io::Error>;
 }
 
-/// Initiates the interfaces, then calculates the DMX-values and outputs them to the interfaces. For now, this function
-/// outputs the DMX-values all to artnet, but this should later be changed to allow all interfaces, that implement the
-/// trait ['DmxInterface']. TODO
-pub fn dmx_output_loop(data_receiver :Receiver<(usize,Vec<Fixture>)>) -> io::Result<()> {
+//TODO
+/// Initializes the output interface and continuously streams DMX data on a dedicated thread.
+///
+/// This loop non-blockingly consumes the latest engine state from the provided MPSC receiver,
+/// calculates the raw DMX universe buffers, and dispatches them via the configured interfaces.
+/// It automatically throttles its execution to match the target frame rate defined by [`FREQUENCY`].
+///
+/// # Arguments
+///
+/// * `data_receiver` - A channel receiver providing tuple updates containing the current
+///   total universe count and the latest snapshot of all active fixtures.
+pub fn dmx_output_loop(data_receiver: Receiver<(usize,Vec<Fixture>)>) -> io::Result<()> {
     let socket = UdpSocket::bind("0.0.0.0:0")?;
     socket.set_broadcast(true)?;
 
