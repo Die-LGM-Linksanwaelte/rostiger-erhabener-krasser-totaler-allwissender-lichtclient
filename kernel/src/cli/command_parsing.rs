@@ -8,10 +8,16 @@ use common::fixture::{
     ChannelIndex, ChannelValue, ChannelParameter, PropertyType, MAX_FINE_DEGREES,
     FloatChannelValue
 };
-use common::fixture::color::ColorPropertyType;
 use common::cli_actions::CliAction;
 use crate::cli::cli_executing::execute_cli_action;
 
+
+/// Runs a command string by parsing it into a [`CliAction`] and executing it.
+///
+/// # Arguments
+///
+/// * `is_kernel` - Flag indicating whether the command is executed from the kernel console
+/// * `command`   - The raw command string entered by the user
 pub fn run_command(is_kernel: bool, command: String) -> (LogLevel, String) {
     match parse_cli_string(command) {
         Ok(command) => execute_cli_action(is_kernel, &command),
@@ -19,7 +25,17 @@ pub fn run_command(is_kernel: bool, command: String) -> (LogLevel, String) {
     }
 }
 
-pub(crate) fn parse_cli_string(command_string: String) -> Result<CliAction,String> {
+/// Parses a raw command string into a structured [`CliAction`].
+/// See '../help.txt' for a list of available commands.
+///
+/// # Arguments
+///
+/// * `command_string` - The raw string to parse
+///
+/// # Errors
+///
+/// Returns an error string if the command is unknown, arguments are missing, or the argument count/types are invalid.
+fn parse_cli_string(command_string: String) -> Result<CliAction,String> {
     let mut line_iter = command_string.split_ascii_whitespace();
     let arg_count = line_iter.clone().count().saturating_sub(1);
 
@@ -96,96 +112,15 @@ pub(crate) fn parse_cli_string(command_string: String) -> Result<CliAction,Strin
     }
 }
 
-/// Checks if the given string is a valid command and executes it.
-/// See '../help.txt' for a list of available commands.
-pub fn parse_debug_command(line: String) -> (LogLevel, String) {
-    let mut line_iter = line.split_ascii_whitespace();
-    //We want to check the arg count, we don't want the command counted
-    let arg_count = line_iter.clone().count().saturating_sub(1);
-    match line_iter.next() {
-
-        Some("create_debug") if cfg!(all(debug_assertions, not(test))) => {
-            let fixture_type_name = "rgb".to_string();
-            let universe = 0;
-
-            let mut channels = HashMap::new();
-            channels.insert(PropertyType::Color(ColorPropertyType::Red), ChannelParameter::new(0));
-            channels.insert(PropertyType::Color(ColorPropertyType::Green), ChannelParameter::new(1));
-            channels.insert(PropertyType::Color(ColorPropertyType::Blue), ChannelParameter::new(2));
-
-            let new_command = CliAction::FixtureNew {
-                name: fixture_type_name.clone(),
-                channels,
-            };
-
-            if let (UserError,error) = execute_cli_action(false,&new_command) {
-                return (UserError,error.to_string());
-            }
-            for i in 0..50 {
-                let name = i.to_string();
-                let start_channel = i * 3;
-
-                let add_command = CliAction::FixtureAdd {
-                    name,
-                    fixture_type_name: fixture_type_name.clone(),
-                    universe,
-                    channel: start_channel
-                };
-
-                match execute_cli_action(false, &add_command) {
-                    (UserSuccess, _) => continue,
-                    x => return x
-                }
-            }
-            (UserSuccess,"Created the debug-fixtures".to_string())
-        }
-
-        Some("set_all") if arg_count == 2 && cfg!(all(debug_assertions, not(test))) => {
-            let property_name = line_iter.next().unwrap().to_string();
-            let value = line_iter.next().unwrap().to_string();
-
-            let property_type = match PropertyType::from_str(&*property_name) {
-                Ok(property_type) => property_type,
-                Err(InvalidPropertyType(property_type)) => {
-                    return (UserError,format!("Error: \"{property_type}\" is not a valid PropertyType"))
-                }
-                Err(_) => unreachable!() //All possible Errors have been handles
-            };
-
-            let value = match parse_cli_value(&*value) {
-                Ok(value) => value,
-                Err(e) => return (UserError,e.to_string()),
-            };
-
-            for i in 0..50 {
-                let name = i.to_string();
-                let set_command = CliAction::FixtureSet {
-                    name,
-                    property_type: property_type.clone(),
-                    value,
-                };
-
-                match execute_cli_action(false, &set_command) {
-                    (UserSuccess, _) => continue,
-                    x => return x
-                }
-            }
-
-            (UserSuccess,format!("Set {} to {} in all debug-fixtures", property_type, value))
-        }
-
-        Some("break") if cfg!(all(debug_assertions, not(test))) => {
-            (Info,"Add a breakpoint at this point in the code to check the datastructures".to_string())
-        }
-
-        Some(command) => {
-            (UserError,format!("Unknown command \"{command}\". Please enter help, to get a list of commands."))
-        }
-
-        None => (UserError,"Unknown command. Please enter help, to get a list of commands.".to_string()),
-    }
-}
-
+/// Parses arguments to construct a [`CliAction::FixtureNew`] instance for creating a new fixture type.
+///
+/// # Arguments
+///
+/// * `args` - Iterator over the remaining whitespace-separated arguments
+///
+/// # Errors
+///
+/// Returns an error string if channel parsing fails or if the syntax for properties and channels is invalid.
 fn parse_new_fixture_type(mut args: SplitAsciiWhitespace) -> Result<CliAction,String> {
     let name = args.next().unwrap().to_string();
     let mut properties: HashMap<PropertyType, ChannelParameter> = HashMap::new();
@@ -253,6 +188,15 @@ fn parse_new_fixture_type(mut args: SplitAsciiWhitespace) -> Result<CliAction,St
 
 }
 
+/// Parses arguments to construct a [`CliAction::FixtureAdd`] instance for spawning a new fixture instance.
+///
+/// # Arguments
+///
+/// * `args` - Iterator over the remaining whitespace-separated arguments
+///
+/// # Errors
+///
+/// Returns an error string if the universe or channel parameters are malformed.
 fn parse_new_fixture(mut args: SplitAsciiWhitespace) -> Result<CliAction,String> {
     let name = args.next().unwrap().to_string();
     let fixture_type_name = args.next().unwrap().to_string();
@@ -266,7 +210,15 @@ fn parse_new_fixture(mut args: SplitAsciiWhitespace) -> Result<CliAction,String>
     })
 }
 
-
+/// Parses arguments to construct a [`CliAction::FixtureMove`] instance for relocating an existing fixture.
+///
+/// # Arguments
+///
+/// * `args` - Iterator over the remaining whitespace-separated arguments
+///
+/// # Errors
+///
+/// Returns an error string if the universe or channel parameters are malformed.
 fn parse_move_fixture(mut args: SplitAsciiWhitespace) -> Result<CliAction, String> {
     let fixture_name = args.next().unwrap().to_string();
     let (new_universe, new_channel) = parse_universe_and_channel(args)?;
@@ -278,6 +230,11 @@ fn parse_move_fixture(mut args: SplitAsciiWhitespace) -> Result<CliAction, Strin
     })
 }
 
+/// Parses arguments to construct a [`CliAction::FixtureRemove`] instance for removing a fixture.
+///
+/// # Arguments
+///
+/// * `args` - Iterator over the remaining whitespace-separated arguments
 fn parse_remove_fixture(mut args: SplitAsciiWhitespace) -> Result<CliAction, String> {
     let fixture_name = args.next().unwrap().to_string();
 
@@ -286,18 +243,21 @@ fn parse_remove_fixture(mut args: SplitAsciiWhitespace) -> Result<CliAction, Str
     })
 }
 
+/// Parses arguments to construct a [`CliAction::FixtureSet`] instance for updating a fixture property.
+///
+/// # Arguments
+///
+/// * `args` - Iterator over the remaining whitespace-separated arguments
+///
+/// # Errors
+///
+/// Returns an error string if the property type is unknown or the value format is invalid.
 fn parse_set_value(mut args: SplitAsciiWhitespace) -> Result<CliAction,String> {
     let name = args.next().unwrap().to_string();
     let property_name = args.next().unwrap().to_string();
     let value = args.next().unwrap().to_string();
 
-    let property_type = match PropertyType::from_str(&property_name) {
-        Ok(property_type) => property_type,
-        Err(InvalidPropertyType(property_type)) => {
-            return Err(format!("Error: \"{property_type}\" is not a valid PropertyType"))
-        }
-        Err(_) => unreachable!() //All possible Errors have been handles
-    };
+    let property_type = parse_property_type(&property_name)?;
 
     let value = parse_cli_value(&*value)?;
 
@@ -308,6 +268,11 @@ fn parse_set_value(mut args: SplitAsciiWhitespace) -> Result<CliAction,String> {
     })
 }
 
+/// Parses arguments to construct a [`CliAction::FixtureGetType`] instance for querying a fixture type.
+///
+/// # Arguments
+///
+/// * `args` - Iterator over the remaining whitespace-separated arguments
 fn parse_get_type(mut args: SplitAsciiWhitespace) -> Result<CliAction,String> {
     let fixture_name = args.next().unwrap().to_string();
 
@@ -316,7 +281,31 @@ fn parse_get_type(mut args: SplitAsciiWhitespace) -> Result<CliAction,String> {
     })
 }
 
-fn parse_cli_value(input: &str) -> Result<ChannelValue,String> {
+/// Parses arguments to construct an [`CliAction::Exit`] instance.
+///
+/// # Arguments
+///
+/// * `args` - Iterator over the remaining whitespace-separated arguments
+///
+/// # Errors
+///
+/// Returns an error string if an invalid argument is provided.
+fn parse_exit(mut args: SplitAsciiWhitespace) -> Result<CliAction,String> {
+    match args.next() {
+        Some("save") => Ok(CliAction::Exit { save_changes: Some(true) }),
+        Some("discard") => Ok(CliAction::Exit { save_changes: Some(false) }),
+        Some(invalid) => Err(format!("Error: Invalid argument '{}' for exit. Use 'save' or 'discard'.", invalid)),
+        None => Ok(CliAction::Exit { save_changes: None }),
+    }
+}
+
+/// Parses a raw channel value string supporting percentages, hex codes, or raw integers
+/// (According to [ChannelValue]).
+///
+/// # Arguments
+///
+/// * `input` - The raw string representation of the value
+pub(super) fn parse_cli_value(input: &str) -> Result<ChannelValue,String> {
 
     let sanitized_input = input.trim().replace("_", "");
     let input_str = sanitized_input.as_str();
@@ -359,16 +348,15 @@ fn parse_cli_value(input: &str) -> Result<ChannelValue,String> {
 }
 
 
-fn parse_exit(mut args: SplitAsciiWhitespace) -> Result<CliAction,String> {
-    match args.next() {
-        Some("save") => Ok(CliAction::Exit { save_changes: Some(true) }),
-        Some("discard") => Ok(CliAction::Exit { save_changes: Some(false) }),
-        Some(invalid) => Err(format!("Error: Invalid argument '{}' for exit. Use 'save' or 'discard'.", invalid)),
-        None => Ok(CliAction::Exit { save_changes: None }),
-    }
-}
-
-
+/// Parses a universe and channel pair formatted as `[universe].[channel]` into a tuple.
+///
+/// # Arguments
+///
+/// * `args` - Iterator over the remaining whitespace-separated arguments
+///
+/// # Errors
+///
+/// Returns an error string if the format is missing a dot or if the numbers are out of valid bounds.
 fn parse_universe_and_channel(mut args: SplitAsciiWhitespace) -> Result<(usize, ChannelIndex),String> {
     let parsed_string = args.next().unwrap();
     let (universe, channel) = match parsed_string.split_once(".") {
@@ -391,8 +379,15 @@ fn parse_universe_and_channel(mut args: SplitAsciiWhitespace) -> Result<(usize, 
     Ok((universe, channel))
 }
 
-
-
+/// Parses and validates a property type from a string slice, mapping it to a [`PropertyType`].
+///
+/// # Arguments
+///
+/// * `property_name` - The string name of the property
+///
+/// # Errors
+///
+/// Returns an error string if the property name is not recognized.
 fn parse_property_type(property_name: &str) -> Result<PropertyType, String> {
     Ok(match PropertyType::from_str(property_name) {
         Ok(property_type) => property_type,

@@ -5,9 +5,9 @@ use std::env;
 use common::networking::messages::{TcpClientMessage, TcpServerMessage, UserRole, HandshakeRequest, HandshakeResponse};
 use common::networking::subscription_objects::{SubscribeTopic, UpdateMode, TopicPayload, DMXConfigurationForClient};
 
-///startPoint - This is the main entry point of the common application.
+/// Main entry point of the common application.
+/// Used as a simple TUI-Client for testing features not yet implemented in the GUI.
 fn main() {
-    println!("EDER stinkt!");
 
     let args: Vec<String> = env::args().collect();
     let target = if args.len() > 1 {
@@ -16,10 +16,10 @@ fn main() {
         "127.0.0.1:6767"
     };
 
-    println!("[System] Versuche Verbindung zu {} aufzubauen...", target);
+    println!("[System] Attempting to connect to {}...", target);
 
     let mut write_stream = TcpStream::connect(target)
-        .expect("Verbindung fehlgeschlagen");
+        .expect("Connection failed");
 
     // ...
     let client_version = env!("CARGO_PKG_VERSION");
@@ -62,39 +62,39 @@ fn main() {
     let res = match bincode::deserialize::<HandshakeResponse>(&bytes) {
         Ok(res) => res,
         Err(e) => {
-            println!("\n[System] Fehler beim Deserialisieren des Handshakes: {}", e);
+            println!("\n[System] Error deserializing handshake: {}", e);
             return;
         }
     };
 
     match res {
         HandshakeResponse::Ok => {
-            println!("\x1b[32m[System] Version {} verifiziert!\x1b[0m", client_version);
+            println!("\x1b[32m[System] Version {} verified!\x1b[0m", client_version);
         }
         HandshakeResponse::Mismatch { server_version } => {
 
-            // HIER IST DEINE ABSOLUT PERFEKTE FEHLERMELDUNG:
-            println!("\n\x1b[91m[CRITICAL ERROR] Protokoll-Abweichung erkannt!\x1b[0m");
-            println!("\x1b[93mDer Kernel läuft auf Version: {}\x1b[0m", server_version);
-            println!("\x1b[93mDieser Client ist auf Version: {}\x1b[0m", client_version);
+            // HERE IS YOUR ABSOLUTELY PERFECT ERROR MESSAGE:
+            println!("\n\x1b[91m[CRITICAL ERROR] Protocol mismatch detected!\x1b[0m");
+            println!("\x1b[93mThe Kernel is running on version: {}\x1b[0m", server_version);
+            println!("\x1b[93mThis client is on version: {}\x1b[0m", client_version);
 
-            // Die smarte Entscheidungshilfe für den User:
-            println!("GPlus bist du dumm, man kann Strings nicht mit < oder > vergleichen!");
+            // The smart decision helper for the user:
+            println!("GPlus are you dumb, you can't compare strings with < or >!");
             // if client_version < server_version {
-            //     println!("→ Bitte lade dir den neuesten Client herunter!");
+            //      println!("→ Please download the latest client!");
             // } else {
-            //     println!("→ Du nutzt einen Client aus der Zukunft. Bitte update den Kernel auf dem Lichtpult!");
+            //      println!("→ You are using a client from the future. Please update the Kernel on the lighting console!");
             // }
 
             std::process::exit(1);
         }
     }
 
-    // DER KLON-TRICK FÜR DEN CLIENT
-    let mut read_stream = write_stream.try_clone().expect("Konnte Stream nicht klonen");
+    // THE CLONE TRICK FOR THE CLIENT
+    let mut read_stream = write_stream.try_clone().expect("Could not clone stream");
 
     // ---------------------------------------------------------
-    // LESE-THREAD (Hintergrund)
+    // READ THREAD (Background)
     // ---------------------------------------------------------
     thread::spawn(move || {
         loop {
@@ -106,7 +106,7 @@ fn main() {
                 },
                 Err(e) => {
                     if e.kind() == io::ErrorKind::UnexpectedEof {
-                        println!("Server wurde beendet");
+                        println!("Server was terminated");
                         read_stream.shutdown(Shutdown::Both).expect("Shutdown failed");
                         std::process::exit(0);
                     }
@@ -123,31 +123,31 @@ fn main() {
                 Ok(_) => {
                     match bincode::deserialize::<TcpServerMessage>(&buffer) {
                         Ok(kernel_msg) => {
-                            // Wir machen einen Zeilenumbruch vorher, damit das "> " vom Prompt nicht zerrissen wird
-                            print!("\r\x1b[2K"); // Löscht die aktuelle Eingabezeile kurz für sauberen Output
+                            // We insert a line break beforehand so the "> " prompt doesn't get torn apart
+                            print!("\r\x1b[2K"); // Briefly clears the current input line for clean output
 
                             match kernel_msg {
                                 TcpServerMessage::Unauthenticated => {
-                                    println!("\n\x1b[31m[Server] Client ist nicht angemeldet. Nachricht verworfen\x1b[0m");
+                                    println!("\n\x1b[31m[Server] Client is not authenticated. Message discarded\x1b[0m");
                                 }
                                 TcpServerMessage::LoginOk { token } => {
-                                    println!("\n\x1b[32m[System] Login erfolgreich! Euer Session-Token: {}\x1b[0m", token);
+                                    println!("\n\x1b[32m[System] Login successful! Your session token: {}\x1b[0m", token);
                                 }
                                 TcpServerMessage::LoginFailed { reason } => {
-                                    println!("\n\x1b[31m[System] Login fehlgeschlagen: {}\x1b[0m", reason);
+                                    println!("\n\x1b[31m[System] Login failed: {}\x1b[0m", reason);
                                 }
                                 TcpServerMessage::ReloginOk { token } => {
-                                    println!("\n\x1b[32m[System] Relogin erfolgreich! Session {} aktiv.\x1b[0m", token);
+                                    println!("\n\x1b[32m[System] Relogin successful! Session {} active.\x1b[0m", token);
                                 }
                                 TcpServerMessage::ReloginFailed { reason } => {
-                                    println!("\n\x1b[31m[System] Relogin fehlgeschlagen: {}\x1b[0m", reason);
+                                    println!("\n\x1b[31m[System] Relogin failed: {}\x1b[0m", reason);
                                 }
                                 TcpServerMessage::LogoutOk => {
-                                    println!("\n\x1b[34m[System] Erfolgreich abgemeldet.\x1b[0m");
+                                    println!("\n\x1b[34m[System] Successfully logged out.\x1b[0m");
                                 }
                                 TcpServerMessage::Kicked { reason } => {
-                                    println!("\n\x1b[31m[System] Du wurdest gekickt: {}\x1b[0m", reason);
-                                    std::process::exit(0); // Client beenden
+                                    println!("\n\x1b[31m[System] You have been kicked: {}\x1b[0m", reason);
+                                    std::process::exit(0); // Exit client
                                 }
                                 TcpServerMessage::CommandOutput{answer: result, ..} => {
                                     println!("[{}] {}", result.0, result.1);
@@ -177,17 +177,17 @@ fn main() {
                                     }
                                 }
                                 other_msg => {
-                                    println!("[Server] Darstellung der Server-Message noch nicht implementiert.\
-                                     Versuche es trotzdem: {:?}", other_msg);
+                                    println!("[Server] Displaying this server message is not yet implemented.\
+                                     Trying anyway: {:?}", other_msg);
                                 }
                             }
 
-                            // Zeigt den Prompt danach wieder an
+                            // Displays the prompt again afterwards
                             print!("> ");
                             io::stdout().flush().unwrap();
                         }
                         Err(e) => {
-                            println!("\n[System] Fehler beim Deserialisieren der Serverantwort: {}", e);
+                            println!("\n[System] Error deserializing server response: {}", e);
                         }
                     }
                 }
@@ -197,7 +197,7 @@ fn main() {
 
 
     // ---------------------------------------------------------
-    // EINGABE-SCHLEIFE (Haupt-Thread)
+    // INPUT LOOP (Main Thread)
     // ---------------------------------------------------------
     loop {
         print!("> ");
@@ -208,7 +208,7 @@ fn main() {
 
         let msg = match input.trim() {
             "1" => TcpClientMessage::Login {
-                password: "".into(), // Euer Passwort hier
+                password: "".into(), // Your password here
                 user_name: "TestUser".into(),
                 user_role: UserRole::Programmer,
             },
@@ -230,16 +230,16 @@ fn main() {
             "8" => TcpClientMessage::Logout,
 
             "9" => {
-                println!("\x1b[31m[System] SIMULIERE KABELBRUCH! Lege mich schlafen...\x1b[0m");
-                // Wir ignorieren alles und frieren den Haupt-Thread ein.
-                // Der Server denkt, wir sind noch da, aber wir reagieren auf nichts mehr.
+                println!("\x1b[31m[System] SIMULATING CABLE BREAK! Going to sleep...\x1b[0m");
+                // We ignore everything and freeze the main thread.
+                // The server thinks we are still there, but we stop responding to anything.
                 thread::sleep(std::time::Duration::from_secs(3600));
                 break;
             }
 
-            // Der neue Relogin-Knopf
+            // The new relogin button
             "11" => {
-                print!("Bitte Session-Token eingeben: ");
+                print!("Please enter session token: ");
                 io::stdout().flush().unwrap();
 
                 let mut token_str = String::new();
@@ -247,40 +247,40 @@ fn main() {
 
                 match token_str.trim().parse::<u64>() {
                     Ok(token) => {
-                        // Wir bauen die Relogin-Nachricht und schicken sie ab
+                        // We build the relogin message and send it off
                         TcpClientMessage::Relogin {
                             user_id: token,
                             clear_subscriptions: false,
                         }
                     }
                     Err(_) => {
-                        println!("\x1b[31m[System] Ungültiges Token. Bitte eine Zahl eingeben.\x1b[0m");
-                        continue; // Bricht diesen Durchlauf ab und zeigt wieder den "> " Prompt
+                        println!("\x1b[31m[System] Invalid token. Please enter a number.\x1b[0m");
+                        continue; // Aborts this iteration and displays the "> " prompt again
                     }
                 }
             }
 
-            "0" => break, // Beendet die Schleife und damit das Programm
+            "0" => break, // Ends the loop and thus the program
 
             command => TcpClientMessage::ExecuteCommand {command: command.into(), response_id: 0},
         };
 
-        // Nachricht senden, Thread blockiert hier NICHT mehr auf eine Antwort!
+        // Send message, thread NO LONGER blocks waiting for an answer here!
         if let Ok(_bytes) = bincode::deserialize::<Vec<u8>>(&bincode::serialize(&msg).unwrap()) {
-            // Nur eine kleine Sicherheit gegen kaputte Serialize-Aufrufe.
-            // Besser direkt:
+            // Just a little safety net against broken Serialize calls.
+            // Better to do it directly:
         }
 
         let bytes = bincode::serialize(&msg).unwrap();
         let bytes_len = bytes.len() as u32;
 
         if write_stream.write_all(&bytes_len.to_be_bytes()).is_err() {
-            println!("[System] Konnte len nicht senden. Verbindung tot?");
+            println!("[System] Could not send len. Connection dead?");
             break;
         }
 
         if write_stream.write_all(&bytes).is_err() {
-            println!("[System] Konnte nicht senden. Verbindung tot?");
+            println!("[System] Could not send. Connection dead?");
             break;
         }
     }

@@ -8,23 +8,41 @@ use common::networking::messages::TcpServerMessage::ShutdownAnnouncement;
 use common::networking::subscription_objects::{SubscribeTopic, UpdateMode};
 use common::r_log;
 
-//Always change these two to the same type, if ConnectionID is changed to u32 for example, NEXT_CONNECTION_ID must be
-// changed to AtomicU32
-pub type ConnectionID = u64;
-pub static NEXT_CONNECTION_ID: AtomicU64 = AtomicU64::new(1);
+/// Unique identifier for an active physical TCP connection.
+///
+/// **Note:** If this type is changed (e.g., to `u32`), [`NEXT_CONNECTION_ID`]
+/// must be updated to the corresponding atomic type (e.g., `AtomicU32`).
+pub(super) type ConnectionID = u64;
+/// Thread-safe atomic counter used to generate unique [`ConnectionID`]s for incoming clients.
+pub(super) static NEXT_CONNECTION_ID: AtomicU64 = AtomicU64::new(1);
 
-pub static SERVER_STATE: LazyLock<RwLock<HashMap<SessionID, ClientSession>>> =
+/// The central, globally accessible repository of all authenticated client sessions.
+/// Maps a unique [`SessionID`] to its corresponding [`ClientSession`].
+pub(super) static SERVER_STATE: LazyLock<RwLock<HashMap<SessionID, ClientSession>>> =
     LazyLock::new(|| RwLock::new(HashMap::new()));
 
-pub struct ClientSession {
+/// Represents an authenticated user session within the server.
+///
+/// A session persists even if the physical connection drops, allowing clients to
+/// seamlessly reconnect and resume their subscriptions and privileges without logging in again.
+pub(super) struct ClientSession {
+    /// The display name of the authenticated user.
     pub user_name: String,
+    /// The permission level and operational scope assigned to this user.
     pub user_role: UserRole,
 
+    /// The active communication channel to the client, if currently connected.
+    /// Stores the `mpsc::Sender` for dispatching network messages and the physical [`ConnectionID`].
     pub active_connection: Option<(Sender<TcpServerMessage>, ConnectionID)>,
+    /// A list of engine state topics this session is currently subscribed to.
     pub subscriptions: Vec<(SubscribeTopic, UpdateMode)>,
     
 }
 
+/// Broadcasts a graceful shutdown announcement to all currently connected clients.
+///
+/// Iterates through the global [`SERVER_STATE`] and attempts to dispatch a
+/// `ShutdownAnnouncement` message via every active connection channel.
 pub fn announce_shutdown() {
     let server_state = SERVER_STATE.read().unwrap();
     for connection in server_state.values() {
