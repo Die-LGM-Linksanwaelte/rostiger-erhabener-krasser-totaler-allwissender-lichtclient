@@ -13,8 +13,9 @@ fn hash_directory(dir: &Path, hasher: &mut DefaultHasher) {
         if path.is_dir() {
             hash_directory(&path, hasher);
         } else if path.extension().and_then(|s| s.to_str()) == Some("rs") {
-            let content = fs::read(&path).unwrap();
-            content.hash(hasher);
+            let mut content = fs::read_to_string(&path).unwrap();
+            content = content.replace("\r\n", "\n");
+            content.as_bytes().hash(hasher);
         }
     }
 }
