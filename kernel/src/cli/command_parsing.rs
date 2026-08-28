@@ -385,7 +385,7 @@ fn parse_universe_and_channel(mut args: SplitAsciiWhitespace) -> Result<(usize, 
     let channel = match channel.parse::<ChannelIndex>() {
         Ok(channel) => channel,
         Err(_) => {
-            return Err(format!("Error: \"{channel}\" is not a valid channel-number"))
+            return Err(format!("Error: \"{}\" is not a valid channel-number", channel))
         }
     };
     Ok((universe, channel))

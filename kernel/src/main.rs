@@ -3,9 +3,9 @@ mod networking;
 mod fixture;
 
 use std::io::{self, Write};
-use std::thread;
+use std::{env, thread};
 use std::time::Duration;
-use common::r_log;
+use common::{r_debug_log, r_log};
 use common::logging::{FileSink, Logger, TerminalSink};
 use common::logging::LogLevel::*;
 use interface::interfaces::dmx_output_loop;
@@ -13,6 +13,8 @@ use crate::cli::command_parsing::run_command;
 
 /// Spawns the ['dmx_output_loop']-thread and then starts the main REPL.
 fn main() -> io::Result<()> {
+
+    let port = get_arguments();
 
     if cfg!(all(debug_assertions, not(test))) {
         thread::sleep(Duration::from_millis(1000));
@@ -22,7 +24,6 @@ fn main() -> io::Result<()> {
     Logger::global().add_sink(Box::new(FileSink::new("/tmp/kernel.log")));
 
     ctrlc::set_handler(move || {
-        // Wir nutzen brav unser Makro und loggen streng auf Englisch!
         r_log!(
             Warning,
             "Ctrl+C is disabled to prevent data loss. Please type 'exit' to shutdown safely."
@@ -36,7 +37,7 @@ fn main() -> io::Result<()> {
     });
 
 
-    networking::activate_socket(6767);
+    networking::activate_socket(port);
 
 
     loop {
@@ -51,10 +52,46 @@ fn main() -> io::Result<()> {
 
         let input = input.trim().to_string();
 
+        r_debug_log!(Info, "[Kernel Cli] User input: {}", input);
+
+
         let response = run_command(true, input);
 
-        r_log!(response.0, "{}", response.1);
+        r_log!(response.0, "[Kernel Cli] {}", response.1);
     }
 
     _artnet_handle.join().unwrap();
+}
+
+fn get_arguments() -> u16 {
+    // Default values:
+    let mut port: u16 = 6767;
+
+    let args: Vec<String> = env::args().collect();
+    let mut iter = args.iter().skip(1);
+
+    while let Some(arg) = iter.next() {
+        match arg.as_ref() {
+            "--port" => {
+                if let Some(port_str) = iter.next() {
+                    match port_str.parse::<u16>() {
+                        Ok(p) => port = p,
+                        Err(_) => {
+                            println!("Invalid port number: {}", port_str);
+                            thread::sleep(Duration::from_millis(50));
+                            std::process::exit(1);
+                        }
+                    }
+                }
+            }
+
+            _ => {
+                println!("Invalid argument: {}", arg);
+                thread::sleep(Duration::from_millis(50));
+                std::process::exit(1);
+            },
+        }
+    }
+
+    port
 }
