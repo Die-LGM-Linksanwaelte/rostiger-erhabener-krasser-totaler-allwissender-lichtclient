@@ -79,14 +79,14 @@ impl LauncherApp {
 
         // Search parent directories for the workspace folder containing 'gui' or 'kernel' Cargo.toml
         for _ in 0..5 {
-            if search_dir.join("gui").join("Cargo.toml").exists()
-                || search_dir.join("kernel").join("Cargo.toml").exists()
+            if search_dir.join("rektal_gui").join("Cargo.toml").exists()
+                || search_dir.join("rektal_kernel").join("Cargo.toml").exists()
             {
-                workspace_dir = search_dir.join("gui");
+                workspace_dir = search_dir.join("rektal_gui");
                 break;
             }
-            if search_dir.join("Cargo.toml").exists() && search_dir.join("gui").exists() {
-                workspace_dir = search_dir.join("gui");
+            if search_dir.join("Cargo.toml").exists() && search_dir.join("rektal_gui").exists() {
+                workspace_dir = search_dir.join("rektal_gui");
                 break;
             }
             if let Some(parent) = search_dir.parent() {
@@ -216,7 +216,7 @@ impl LauncherApp {
         self.system
             .processes()
             .values()
-            .any(|p| p.name().to_string_lossy().starts_with("kernel"))
+            .any(|p| p.name().to_string_lossy().starts_with("rektal_kernel"))
     }
 
     /// Checks whether a REKTAL GUI client process is currently active on the host system.
@@ -231,7 +231,7 @@ impl LauncherApp {
         self.system
             .processes()
             .values()
-            .any(|p| p.name().to_string_lossy().starts_with("gui"))
+            .any(|p| p.name().to_string_lossy().starts_with("rektal_gui"))
     }
 }
 

@@ -106,7 +106,7 @@ pub fn spawn_process(bin_name: &str, args: &[&str], show_console: bool) -> std::
 /// let _child = spawn_kernel(&[], true);
 /// ```
 pub fn spawn_kernel(args: &[&str], show_console: bool) -> std::io::Result<std::process::Child> {
-    spawn_process("kernel", args, show_console)
+    spawn_process("rektal_kernel", args, show_console)
 }
 
 /// Spawns the REKTAL GUI client executable with optional arguments and console window.
@@ -127,7 +127,7 @@ pub fn spawn_kernel(args: &[&str], show_console: bool) -> std::io::Result<std::p
 /// let _child = spawn_gui(&[], false);
 /// ```
 pub fn spawn_gui(args: &[&str], show_console: bool) -> std::io::Result<std::process::Child> {
-    spawn_process("gui", args, show_console)
+    spawn_process("rektal_gui", args, show_console)
 }
 
 /// Spawns a process on Windows with process group detachment and optional console window.
