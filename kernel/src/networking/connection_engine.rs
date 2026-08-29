@@ -27,9 +27,9 @@ pub(super) static SERVER_STATE: LazyLock<RwLock<HashMap<SessionID, ClientSession
 /// seamlessly reconnect and resume their subscriptions and privileges without logging in again.
 pub(super) struct ClientSession {
     /// The display name of the authenticated user.
-    pub user_name: String,
+    pub _user_name: String,
     /// The permission level and operational scope assigned to this user.
-    pub user_role: UserRole,
+    pub _user_role: UserRole,
 
     /// The active communication channel to the client, if currently connected.
     /// Stores the `mpsc::Sender` for dispatching network messages and the physical [`ConnectionID`].

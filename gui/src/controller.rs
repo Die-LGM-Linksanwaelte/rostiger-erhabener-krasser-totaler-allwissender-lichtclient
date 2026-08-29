@@ -21,6 +21,8 @@ use common::networking::subscription_objects::{SubscribeTopic, TopicPayload};
 use common::r_log;
 use eframe::egui::Color32;
 use egui_dock::DockState;
+use std::fmt;
+use std::fmt::{Display, Formatter};
 use std::sync::mpsc::{Receiver, Sender};
 
 /// Enum describing global GUI events dispatched across the application.
@@ -58,6 +60,29 @@ pub enum UiEvent {
         /// The subscription topic requested.
         topic: SubscribeTopic,
     },
+}
+
+impl Display for UiEvent {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            UiEvent::SendTerminalCommand { id, command } => {
+                write!(f, "SendTerminalCommand, id: {}, command: {}", id, command)
+            }
+            UiEvent::LoginRequest {
+                user_name,
+                password,
+                user_role,
+            } => write!(
+                f,
+                "LoginRequest, username: {},password: {}, role: {}",
+                user_name, password, user_role
+            ),
+            UiEvent::SetConnectionState { state } => write!(f, "SetConnectionState: {}", state),
+            UiEvent::LogoutRequest => write!(f, "LogoutRequest"),
+            UiEvent::DisconnectRequest => write!(f, "DisconnectRequest"),
+            UiEvent::SubscribeRequest { topic } => write!(f, "SubscribeRequest, topic: {}", topic),
+        }
+    }
 }
 
 /// Drains incoming DMX universe frame data from the UDP receiver channel
@@ -211,18 +236,30 @@ pub(crate) fn handle_incoming_network_data(
                         },
                     });
                 }
-                TcpServerMessage::TopicUpdate { data } => {
-                    match data {
-                        TopicPayload::DMXConfiguration(dmx_config) => {
-                            for (_, tab) in tree.iter_all_tabs_mut() {
-                                if let Tab::Universe(panel) = tab {
-                                    panel.device_configuration = Some(dmx_config.clone());
-                                }
+                TcpServerMessage::TopicUpdate { data } => match data {
+                    TopicPayload::DMXConfiguration(dmx_config) => {
+                        for (_, tab) in tree.iter_all_tabs_mut() {
+                            if let Tab::Universe(panel) = tab {
+                                panel.device_configuration = Some(dmx_config.clone());
                             }
                         }
                     }
+                },
+                TcpServerMessage::ShutdownAnnouncement => {
+                    send_ui_event(UiEvent::SetConnectionState {
+                        state: ConnectionState::Disconnected
+                    });
+                },
+                TcpServerMessage::Unauthenticated => {
+                    r_log!(UserError, "Server couldn't Unauthenticated");
                 }
-                _ => {}
+                TcpServerMessage::ReloginOk { .. } => {}
+                TcpServerMessage::ReloginFailed { .. } => {}
+                TcpServerMessage::Kicked { .. } => {}
+                TcpServerMessage::ImplicitCommandOutput { .. } => {}
+                TcpServerMessage::EditGranted { .. } => {}
+                TcpServerMessage::EditDenied { .. } => {}
+                TcpServerMessage::DropEditAck(_) => {}
             }
         }
     }
@@ -245,6 +282,7 @@ pub(crate) fn handle_events(
     tree: &mut DockState<Tab>,
 ) {
     while let Ok(event) = ui_receiver.try_recv() {
+        r_log!(Info, "UIEvent: {}" ,event);
         match event {
             UiEvent::SendTerminalCommand { id, command } => {
                 process_terminal_command(id, command, tcp_sender, tree);
@@ -289,7 +327,11 @@ pub(crate) fn handle_events(
                             == (ConnectionState::Connected {
                                 session_state: LoggedIn,
                             });
-                        if state == (ConnectionState::Connected{session_state: LoggedIn}) {
+                        if state
+                            == (ConnectionState::Connected {
+                                session_state: LoggedIn,
+                            })
+                        {
                             panel.add_fragments(vec![TextFragment {
                                 text: "[INFO] Logins successful, Terminal ready!".to_string(),
                                 color: Color32::GREEN,
