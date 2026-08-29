@@ -1,0 +1,77 @@
+COMMANDS:
+  help
+      Displays this help overview.
+
+  new <type_name> <property> <channel> [<property> <channel> ...]
+      Defines a new fixture type template with the specified channel mappings.
+      
+      Parameters:
+        <type_name>   Name of the fixture type (e.g. "rgb_par", "spot")
+        <property>    Property name (see PROPERTIES below)
+        <channel>     Relative channel offset (0-based)
+        
+      Fine Channels (16-bit / 32-bit):
+        Append '_f' or '_f1', '_f2', '_f3' to the property name.
+        (The coarse channel must be defined before its fine channel!)
+        Example: new head pan 0 pan_f 1 tilt 2 tilt_f 3 dimmer 4
+
+  add <name> <fixture_type> <universe.start_channel>
+      Creates an instance of a fixture and patches it to a DMX universe.
+      
+      Parameters:
+        <name>            Unique fixture identifier (e.g. "spot1")
+        <fixture_type>    Name of an existing fixture type created via 'new'
+        <universe>        DMX universe index (0-based: 0, 1, ...)
+        
+      Example: add spot1 rgb_par 0.0
+
+  set <name> <property> <value>
+      Sets the value of a property on a fixture.
+      
+      Parameters:
+        <name>        Fixture name
+        <property>    Target property (e.g. "dimmer", "red", "pan")
+        <value>       Value (supports percentage, hexadecimal, or raw integer)
+        
+      Examples:
+        set spot1 dimmer 100%
+        set spot1 red #FF
+        set spot1 pan 32768
+
+  type <fixture_name>
+      Prints the fixture type of an existing fixture.
+      
+      Example: type spot1
+
+--------------------------------------------------------------------------------
+VALUE FORMATS (<value>):
+  1. Percentage:
+     0% to 100% (e.g. '50%', '100%', '33.3%')
+     Automatically scaled to the full 32-bit value range.
+
+  2. Hexadecimal (prefixed with '#', underscores '_' allowed for readability):
+     #XX       (2 digits, e.g. #FF -> scaled to 32-bit)
+     #XXXX     (4 digits, e.g. #FFFF)
+     #XXXXXX   (6 digits, e.g. #FF0000 -> 24-bit RGB)
+     #XXXXXXXX (8 digits, 32-bit raw value)
+
+  3. Integer:
+     Decimal number ranging from 0 to 4294967295 (u32::MAX).
+
+--------------------------------------------------------------------------------
+SUPPORTED PROPERTIES (<property>):
+  Color Channels (only ONE color model is allowed per fixture type):
+    RGB:  red, green, blue
+    CMY:  cyan, magenta, yellow
+    HSV:  hue, saturation, value
+
+  Standard Properties:
+    dimmer, shutter, strobe, speed, uv
+    pan, tilt
+    zoom, focus, frost
+    prism, prism-rotation, prism-index
+    gobo, gobo-rotation, gobo-wheel-rotation, gobo-wheel-speed
+    fog-intensity, fog-fan-speed
+
+  Custom Properties:
+    other_<name> (e.g. other_macro)

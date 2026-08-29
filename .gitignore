@@ -21,4 +21,4 @@ rektal/target
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 target/
-/Interface/src/main.rs
+/interface/src/main.rs

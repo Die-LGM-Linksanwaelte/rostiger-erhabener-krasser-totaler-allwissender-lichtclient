@@ -1,0 +1,16 @@
+[package]
+name = "gui"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+eframe = "0.28"
+egui_dock = "0.13"
+common = { path = "../common" }
+egui_extras = "0.28"
+img_crate = { package = "image", version = "0.25", default-features = false, features = ["png"] }
+egui = "0.28"
+bincode = "1.3.3"
+
+[build-dependencies]
+winresource = "0.1.31"

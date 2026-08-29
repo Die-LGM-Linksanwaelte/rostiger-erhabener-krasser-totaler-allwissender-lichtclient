@@ -4,5 +4,8 @@ version = "0.1.1"
 edition = "2024"
 
 [dependencies]
-Common = { path = "../Common" }
-Interface = { path = "../Interface" }
+common = { path = "../common" }
+interface = { path = "../interface" }
+rand = "0.10.2"
+bincode = "1.3.3"
+ctrlc = "3.5.2"

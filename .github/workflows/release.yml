@@ -31,11 +31,12 @@ jobs:
           cd target/release
           mv gui rektal_client
           mv kernel rektal_kernel
+          mv launcher rektal_launcher
 
       - name: Create Tarball (.tar.gz)
         run: |
           cd target/release
-          tar -czvf rektal-linux-x64.tar.gz rektal_client rektal_kernel
+          tar -czvf rektal-linux-x64.tar.gz rektal_client rektal_kernel rektal_launcher
 
       - name: Publish Release
         uses: softprops/action-gh-release@v1
@@ -87,6 +88,7 @@ jobs:
           New-Item -ItemType Directory -Force windows_dist | Out-Null
           Copy-Item "target/x86_64-pc-windows-msvc/release/gui.exe" "windows_dist/rektal_client.exe"
           Copy-Item "target/x86_64-pc-windows-msvc/release/kernel.exe" "windows_dist/rektal_kernel.exe"
+          Copy-Item "target/x86_64-pc-windows-msvc/release/launcher.exe" "windows_dist/rektal_launcher.exe"
           
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DMyAppVersion="$version" /DMyArch="x64" installer.iss
           
@@ -95,6 +97,7 @@ jobs:
           New-Item -ItemType Directory -Force windows_dist | Out-Null
           Copy-Item "target/aarch64-pc-windows-msvc/release/gui.exe" "windows_dist/rektal_client.exe"
           Copy-Item "target/aarch64-pc-windows-msvc/release/kernel.exe" "windows_dist/rektal_kernel.exe"
+          Copy-Item "target/aarch64-pc-windows-msvc/release/launcher.exe" "windows_dist/rektal_launcher.exe"
           
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DMyAppVersion="$version" /DMyArch="ARM64" installer.iss
 
@@ -143,6 +146,7 @@ jobs:
           mkdir -p pkg_root_arm64/usr/local/bin
           cp target/aarch64-apple-darwin/release/gui pkg_root_arm64/usr/local/bin/rektal_client
           cp target/aarch64-apple-darwin/release/kernel pkg_root_arm64/usr/local/bin/rektal_kernel
+          cp target/aarch64-apple-darwin/release/launcher pkg_root_arm64/usr/local/bin/rektal_launcher
           
           pkgbuild --root pkg_root_arm64 --identifier de.lgm_linksanwaelte.REKTAL --version "${{ env.VERSION }}" --install-location "/" Rektal-macOS-ARM64-${{ env.VERSION }}.pkg
           
@@ -150,6 +154,7 @@ jobs:
           mkdir -p pkg_root_x86/usr/local/bin
           cp target/x86_64-apple-darwin/release/gui pkg_root_x86/usr/local/bin/rektal_client
           cp target/x86_64-apple-darwin/release/kernel pkg_root_x86/usr/local/bin/rektal_kernel
+          cp target/x86_64-apple-darwin/release/launcher pkg_root_x86/usr/local/bin/rektal_launcher
           
           pkgbuild --root pkg_root_x86 --identifier de.lgm_linksanwaelte.REKTAL --version "${{ env.VERSION }}" --install-location "/" Rektal-macOS-x86_64-${{ env.VERSION }}.pkg
   
