@@ -1,8 +1,11 @@
 [workspace]
 #name = "R.E.K.T.A.L."
 resolver = "1"
+version = "0.1.0"
 members = [
+    "gui",
     "rektal",
     "kernel",
     "interface",
-    "common"]
+    "common",
+    "launcher"]
