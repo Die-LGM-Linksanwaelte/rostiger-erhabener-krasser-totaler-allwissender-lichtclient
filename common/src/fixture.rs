@@ -173,6 +173,10 @@ impl Fixture {
     /// * [`ChannelOutOfRange`](ChannelError::ChannelOutOfRange) – if the new channel range is out of bounds 
     pub fn move_to_channel(&mut self, new_channel: ChannelIndex, new_universe: usize) -> Result<(), FixtureError> {
 
+        if new_channel > MAX_CHANNEL {
+            return Err(FixtureError::ChannelError(ChannelError::ChannelOutOfRange));
+        }
+
         let old_start = (self.start_channel, self.universe);
         let new_start = (new_channel, new_universe);
 
