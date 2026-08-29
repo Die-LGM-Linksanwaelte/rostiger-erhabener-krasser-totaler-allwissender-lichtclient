@@ -73,7 +73,7 @@ impl Display for SessionState {
         match self {
             SessionState::LoginPending     => write!(f, "Login"),
             SessionState::LoggedOut        => write!(f, "Logout"),
-            SessionState::LoggedIn         => write!(f, "Log in"),
+            SessionState::LoggedIn         => write!(f, "Logged in"),
             SessionState::LoginFailed(msg) => write!(f, "LoginFailed({})", msg),
         }
     }
