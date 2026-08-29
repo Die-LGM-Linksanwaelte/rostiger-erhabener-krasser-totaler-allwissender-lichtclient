@@ -32,7 +32,7 @@ fn main() -> io::Result<()> {
     }
 
     Logger::global().add_sink(Box::new(TerminalSink {cli_prompt: Some("> ".into())}));
-    Logger::global().add_sink(Box::new(FileSink::new("/tmp/kernel.log")));
+    Logger::global().add_sink(Box::new(FileSink::new("kernel.log")));
 
     #[cfg(all(not(debug_assertions), not(test)))]
     {

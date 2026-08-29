@@ -127,7 +127,7 @@ pub fn spawn_kernel(args: &[&str], show_console: bool) -> std::io::Result<std::p
 /// let _child = spawn_gui(&[], false);
 /// ```
 pub fn spawn_gui(args: &[&str], show_console: bool) -> std::io::Result<std::process::Child> {
-    spawn_process("rektal_gui", args, show_console)
+    spawn_process("rektal_client", args, show_console)
 }
 
 /// Spawns a process on Windows with process group detachment and optional console window.

@@ -79,14 +79,14 @@ impl LauncherApp {
 
         // Search parent directories for the workspace folder containing 'gui' or 'kernel' Cargo.toml
         for _ in 0..5 {
-            if search_dir.join("rektal_gui").join("Cargo.toml").exists()
+            if search_dir.join("rektal_client").join("Cargo.toml").exists()
                 || search_dir.join("rektal_kernel").join("Cargo.toml").exists()
             {
-                workspace_dir = search_dir.join("rektal_gui");
+                workspace_dir = search_dir.join("rektal_client");
                 break;
             }
-            if search_dir.join("Cargo.toml").exists() && search_dir.join("rektal_gui").exists() {
-                workspace_dir = search_dir.join("rektal_gui");
+            if search_dir.join("Cargo.toml").exists() && search_dir.join("rektal_client").exists() {
+                workspace_dir = search_dir.join("rektal_client");
                 break;
             }
             if let Some(parent) = search_dir.parent() {
@@ -231,7 +231,7 @@ impl LauncherApp {
         self.system
             .processes()
             .values()
-            .any(|p| p.name().to_string_lossy().starts_with("rektal_gui"))
+            .any(|p| p.name().to_string_lossy().starts_with("rektal_client"))
     }
 }
 
