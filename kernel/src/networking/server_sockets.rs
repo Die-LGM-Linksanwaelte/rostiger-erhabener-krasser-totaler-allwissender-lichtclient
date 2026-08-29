@@ -4,25 +4,35 @@ use std::thread;
 use std::sync::atomic::Ordering;
 use std::sync::mpsc;
 use std::sync::mpsc::{Receiver,Sender};
+use std::time::Duration;
 use rand::{RngExt};
-use common::r_log;
+use common::{r_log, r_debug_log};
 use common::logging::LogLevel::*;
 use common::networking::messages::{HandshakeRequest, HandshakeResponse, SessionID, TcpClientMessage, TcpServerMessage};
 use common::networking::messages::TcpServerMessage::{CommandOutput, ImplicitCommandOutput, LogoutOk};
 use common::networking::subscription_objects::UpdateMode;
 use crate::networking::connection_engine::{ClientSession, ConnectionID, NEXT_CONNECTION_ID, SERVER_STATE};
 use crate::networking::subscriptions::add_subscription;
-use crate::cli::command_parsing::run_command;
+use crate::cli::run_command;
 use crate::cli::execute_implicit_cli_action;
 
+/// Binds the TCP server socket to the specified port and spawns the main incoming connection listener loop.
+///
+/// If binding fails (e.g., because another instance is already running), an error is logged and the process exits.
+/// Every accepted connection is assigned a unique [`ConnectionID`] and dispatched to its own dedicated worker thread.
+///
+/// # Arguments
+///
+/// * `port` - The network port number on which the server should listen for incoming client connections.
 pub fn activate_socket(port: u16) {
     let address = format!("0.0.0.0:{}", port);
     let listener = match TcpListener::bind(&address) {
         Ok(l) => l,
         Err(e) => {
             r_log!(Error,"CRITICAL: Failed to bind TCP socket on address {}. Is another kernel instance already \
-                    running? OS Error: {}",address, e);
-
+                    running? To change port, use --port [port]. OS Error: {}",address, e);
+            // Give the Logger time to do its thing
+            thread::sleep(Duration::from_millis(50));
             std::process::exit(1);
         }
     };
@@ -49,6 +59,16 @@ pub fn activate_socket(port: u16) {
     });
 }
 
+/// Orchestrates the lifecycle of an individual client connection.
+///
+/// Performs the initial protocol handshake and version compatibility check, establishes
+/// independent channels for asynchronous communication, and spawns parallel reader and writer
+/// threads for the stream.
+///
+/// # Arguments
+///
+/// * `stream`        - The active `TcpStream` associated with the connected client.
+/// * `connection_id` - The unique identifier assigned to this physical connection.
 fn handle_client(mut stream: TcpStream, connection_id: ConnectionID) {
 
     match check_version_compatibility(&mut stream) {
@@ -80,11 +100,13 @@ fn handle_client(mut stream: TcpStream, connection_id: ConnectionID) {
 
 }
 
+/// Details of a protocol version mismatch encountered during a client handshake.
 struct VersionMismatch {
     server_version: String,
     client_version: String,
 }
 
+/// Represents possible errors that can occur during the client handshake phase.
 enum HandshakeError {
     VersionMismatch {
         server_version: String,
@@ -93,6 +115,15 @@ enum HandshakeError {
     InvalidData(String),
 }
 
+/// Validates the initial handshake packet sent by a newly connected client.
+///
+/// Verifies the custom magic string protocol identifier, deserializes the client's version details,
+/// compares the protocol hash against the running server version, and transmits the appropriate
+/// [`HandshakeResponse`] back across the stream.
+///
+/// # Arguments
+///
+/// * `stream` - A mutable reference to the client's `TcpStream`.
 fn check_version_compatibility(stream: &mut TcpStream) -> Result<(), HandshakeError> {
     let mut len_buffer = [0u8; 4];
     let mut buffer = match stream.read_exact(&mut len_buffer) {
@@ -152,6 +183,16 @@ fn check_version_compatibility(stream: &mut TcpStream) -> Result<(), HandshakeEr
 
 }
 
+/// Continuously reads, deserializes, and processes incoming messages from an active client connection.
+///
+/// Handles session authorization enforcement, delegates requests to appropriate message handlers,
+/// and performs cleanup operations (updating session status to sleeping) when the client disconnects.
+///
+/// # Arguments
+///
+/// * `stream`        - A mutable reference to the client's `TcpStream`.
+/// * `connection_id` - The unique identifier of this connection.
+/// * `tx_channel`    - The message sender channel used to push asynchronous server responses to the tcp writer thread.
 fn read_thread(stream: &mut TcpStream, connection_id: ConnectionID, tx_channel: &Sender<TcpServerMessage>) {
     let mut len_buffer = [0u8; 4];
     let mut token: Option<SessionID> = None;
@@ -187,7 +228,7 @@ fn read_thread(stream: &mut TcpStream, connection_id: ConnectionID, tx_channel: 
         };
 
         let msg = bincode::deserialize::<TcpClientMessage>(&bytes).unwrap();
-        r_log!(Info,"[Conn {}] Received Enum: {:?}", connection_id, msg);
+        r_debug_log!(Info,"[Conn {}] Received Enum: {:?}", connection_id, msg);
 
         token = update_login_status(&msg, token, &tx_channel, connection_id);
 
@@ -237,9 +278,20 @@ fn read_thread(stream: &mut TcpStream, connection_id: ConnectionID, tx_channel: 
             }
         };
     }
-    r_log!(Info,"The Read-Thread  {} is dead! Long live the Read-Thread!", connection_id);
+    r_debug_log!(Info,"The Read-Thread  {} is dead! Long live the Read-Thread!", connection_id);
 }
 
+/// Manages outgoing data serialization and transmission to the client on a dedicated background thread.
+///
+/// Listens on the receive channel for outbound [`TcpServerMessage`] objects, serializes them,
+/// writes their length-prefixed binary representations to the TCP stream, and terminates upon
+/// encountering transmission errors or a kick notification.
+///
+/// # Arguments
+///
+/// * `rx_channel`    - The receiver channel for pulling queued server-to-client messages.
+/// * `write_stream`  - The isolated `TcpStream` clone dedicated to writing data.
+/// * `connection_id` - The unique identifier of this connection.
 fn write_thread(rx_channel: Receiver<TcpServerMessage>, mut write_stream: TcpStream, connection_id: ConnectionID) {
     while let Ok(message) = rx_channel.recv() {
         match bincode::serialize(&message) {
@@ -274,9 +326,18 @@ fn write_thread(rx_channel: Receiver<TcpServerMessage>, mut write_stream: TcpStr
 
     //Thread the Ripper, we kill the read-thread with us
     let _ = write_stream.shutdown(Shutdown::Both);
-    r_log!(Info,"The Write-Thread {} is dead! Long live the Write-Thread!", connection_id);
+    r_debug_log!(Info,"The Write-Thread {} is dead! Long live the Write-Thread!", connection_id);
 }
 
+/// Evaluates authentication-related client messages (`Login`, `Relogin`, `Logout`) and updates global session states
+/// (via return).
+///
+/// # Arguments
+///
+/// * `message`       - The incoming client message payload.
+/// * `old_token`     - The existing session token associated with this connection context, if any.
+/// * `tx_channel`    - The transmission channel to send immediate auth feedback.
+/// * `connection_id` - The unique identifier of the connection.
 fn update_login_status(
     message: &TcpClientMessage, old_token: Option<SessionID>, tx_channel: &Sender<TcpServerMessage>,
     connection_id:ConnectionID
@@ -289,7 +350,7 @@ fn update_login_status(
                     connection_id, user_name, real_old_token);
             }
 
-            if password == "" {//TODO Passwort irgendwo speichern und hier auslesen
+            if password == "" {//TODO Save password somewhere and read it here
                 let mut state = SERVER_STATE.write().unwrap();
 
                 let mut rng = rand::rng();
@@ -372,13 +433,20 @@ fn update_login_status(
 
     if let Some(response) = response {
         if let Err(e) = tx_channel.send(response) {
-            r_log!(Error,"[Conn {}] Fehler beim Senden der Auth-Antwort an den Channel: {}", connection_id, e);
+            r_log!(Error,"[Conn {}] Error sending the auth response to the channel: {}", connection_id, e);
         }
     }
 
     new_token
 }
 
+/// Routes general, authorized client messages to appropriate engine functions or command handlers.
+///
+/// # Arguments
+///
+/// * `msg`           - The deserialized command.
+/// * `connection_id` - The unique identifier of the active connection.
+/// * `token`         - The verified session identifier of the caller.
 fn handle_messages(msg: TcpClientMessage, connection_id: ConnectionID, token: SessionID) -> Option<TcpServerMessage> {
     match msg {
         TcpClientMessage::Login {..} | TcpClientMessage::Logout | TcpClientMessage::Relogin {..} => unreachable!(),
@@ -387,20 +455,20 @@ fn handle_messages(msg: TcpClientMessage, connection_id: ConnectionID, token: Se
         TcpClientMessage::Subscribe {topic, update_mode} => {
             add_subscription(&token, &topic, &update_mode);
             r_log!(Info,"[Conn {}] {}", connection_id, match update_mode {
-                UpdateMode::OnChange => format!("Der Client will über Änderungen von {} erfahren!", topic),
-                UpdateMode::Continuous => format!("Der Client will über {} auf dem laufenden gehalten werden", topic),
+                UpdateMode::OnChange => format!("Client requested updates on changes for {}!", topic),
+                UpdateMode::Continuous => format!("Client requested continuous updates for {}", topic),
             }); //TODO Normally we always should respond to this
             None
         }
 
         TcpClientMessage::Unsubscribe { topic } => {
-            r_log!(Info,"[Conn {}] Der Client will nichts von {} wissen.", connection_id, topic );
+            r_log!(Info, "[Conn {}] Client unsubscribed from {}.", connection_id, topic);
             None
         }
 
         TcpClientMessage::ExecuteCommand{ command, response_id} => {
             let answer = run_command(false, command);
-            r_log!(answer.0, "{}", answer.1);
+            r_log!(answer.0, "[Conn {}] {}", connection_id, answer.1);
             Some(CommandOutput{
                 answer,
                 response_id
@@ -417,12 +485,16 @@ fn handle_messages(msg: TcpClientMessage, connection_id: ConnectionID, token: Se
         }
 
         TcpClientMessage::RequestEdit(_) => {
-            r_log!(Info,"[Conn {}] Yo, Client wollte resource, yo", connection_id);
+            r_log!(Info, "[Conn {}] Client requested resource edit lock", connection_id);
             None
         }
 
         TcpClientMessage::SubmitEdit {resource:_, new_data:_} => {
-            r_log!(Info,"[Conn {}] Yo, der Nutzer ist fertig mit Resource, yo", connection_id);
+            r_log!(Info,"[Conn {}] User submitted change to resource", connection_id);
+            None
+        },
+        TcpClientMessage::DropEditLock(_) => {
+            r_log!(Info, "[Conn {}] User dropped resource edit lock", connection_id);
             None
         }
     }

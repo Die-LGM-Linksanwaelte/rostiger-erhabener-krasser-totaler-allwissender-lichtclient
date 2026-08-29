@@ -48,7 +48,7 @@ impl TerminalPanel {
     ///
     /// # Arguments
     /// * `tab_id` - Unique identifier of the host tab.
-    pub fn new(tab_id: u32) -> Self {
+    pub fn new(tab_id: u32, is_active: bool) -> Self {
         let initial_line = vec![];
         Self {
             tab_id,
@@ -59,7 +59,7 @@ impl TerminalPanel {
             position_in_history: 0,
             settings_open: false,
             settings_text: String::new(),
-            is_active: false,
+            is_active,
         }
     }
 
@@ -141,20 +141,19 @@ impl TerminalPanel {
     /// # Arguments
     /// * `ui` - Mutable reference to the `egui::Ui` context.
     fn draw_central_panel(&mut self, ui: &mut egui::Ui) {
-        egui::CentralPanel::default().show_inside(ui, |ui| {
-            egui::ScrollArea::vertical()
-                .stick_to_bottom(true)
-                .auto_shrink([false, false])
-                .show(ui, |ui| {
-                    for line_fragments in &self.history {
-                        ui.horizontal_wrapped(|ui| {
-                            for fragment in line_fragments {
-                                ui.label(egui::RichText::new(&fragment.text).color(fragment.color));
-                            }
-                        });
-                    }
-                });
-        });
+        egui::ScrollArea::vertical()
+            .id_source(format!("terminal_scroll_{}", self.tab_id))
+            .stick_to_bottom(true)
+            .auto_shrink([false, false])
+            .show(ui, |ui| {
+                for line_fragments in &self.history {
+                    ui.horizontal_wrapped(|ui| {
+                        for fragment in line_fragments {
+                            ui.label(egui::RichText::new(&fragment.text).color(fragment.color));
+                        }
+                    });
+                }
+            });
     }
 
     /// Renders the bottom command prompt input field.
@@ -164,7 +163,7 @@ impl TerminalPanel {
     /// # Arguments
     /// * `ui` - Mutable reference to the `egui::Ui` context.
     fn draw_input_panel(&mut self, ui: &mut egui::Ui) {
-        egui::TopBottomPanel::bottom("terminal_input_panel")
+        egui::TopBottomPanel::bottom(format!("terminal_input_panel_{}", self.tab_id))
             .resizable(false)
             .show_inside(ui, |ui| {
                 ui.separator();
@@ -182,7 +181,7 @@ impl TerminalPanel {
                                 TextFragment {
                                     text: "> ".to_string(),
                                     color: Color32::GRAY,
-                                },
+                                 },
                                 TextFragment {
                                     text: self.input_text.clone(),
                                     color: Color32::WHITE,
@@ -235,9 +234,15 @@ impl TerminalPanel {
     /// # Arguments
     /// * `ui` - Mutable reference to the `egui::Ui` context.
     pub fn ui(&mut self, ui: &mut egui::Ui) {
-        self.draw_settings_window(ui);
-        self.draw_central_panel(ui);
-        self.draw_input_panel(ui);
-        self.draw_top_bar(ui);
+        let panel_id = ui
+            .id()
+            .with(format!("terminal_content_area_{}", self.tab_id));
+
+        ui.push_id(panel_id, |ui| {
+            self.draw_settings_window(ui);
+            self.draw_top_bar(ui);
+            self.draw_input_panel(ui);
+            self.draw_central_panel(ui);
+        });
     }
 }

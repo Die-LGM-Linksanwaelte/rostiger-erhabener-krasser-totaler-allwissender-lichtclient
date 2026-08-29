@@ -40,7 +40,7 @@ impl Tab {
     pub fn unique_id(&self) -> String {
         match self {
             Tab::Universe(panel) => format!("universe_tab_{}", panel.tab_id),
-            Tab::Terminal(_) => "terminal_tab".to_string(),
+            Tab::Terminal(panel) => format!("terminal_tab_{}", panel.tab_id),
         }
     }
 

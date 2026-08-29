@@ -5,7 +5,7 @@
 //! displays live channel values, and optionally overlays patched fixture devices and property types.
 
 use crate::network::udp_client::MAX_CHANNEL;
-pub use common::fixture::channel::PropertyType;
+pub use common::fixture::PropertyType;
 use common::networking::subscription_objects::{
     DMXConfigForClientState, DMXConfigurationForClient,
 };
@@ -103,7 +103,7 @@ impl UniversePanel {
         if self.settings_open {
             let mut is_open = self.settings_open;
 
-            egui::Window::new("Universe Panel Settings")
+            egui::Window::new(format!("Universe Panel Settings - Panel {}", self.tab_id))
                 .collapsible(false)
                 .resizable([false, false])
                 .pivot(egui::Align2::CENTER_CENTER)
@@ -340,7 +340,7 @@ impl UniversePanel {
                 } else {
                     color
                 };
-                let stroke_width = if is_hovered { 2.0 } else { 1.0 };
+                let stroke_width: f32 = if is_hovered { 2.0 } else { 1.0 };
 
                 ui.painter().rect(
                     bar_rect,

@@ -22,6 +22,7 @@ use crate::network::connection_state::ConnectionState::Connected;
 use network::connection_state::{ConnectionState, SessionState};
 use network::tcp_client::TcpClient;
 use panels::Tab;
+use crate::network::connection_state::SessionState::LoggedIn;
 
 mod controller;
 mod network;
@@ -125,7 +126,7 @@ impl MyApp {
             r_log!(Error, "Failed to start UDP listener: {}", e);
         }
 
-        let initial_terminal_panel = panels::terminal::TerminalPanel::new(0);
+        let initial_terminal_panel = panels::terminal::TerminalPanel::new(0, false);
 
         let mut app = Self {
             tree: DockState::new(vec![Tab::Terminal(initial_terminal_panel)]),
@@ -242,6 +243,21 @@ impl MyApp {
                 });
 
                 ui.menu_button("Window", |ui| {
+
+                    if ui.button("Terminal").clicked() {
+                        let new_tab_id = self.next_tab_id;
+                        self.next_tab_id += 1;
+
+                        let new_terminal_panel = panels::terminal::TerminalPanel::new(
+                            new_tab_id,
+                            self.connection_state == Connected{session_state: LoggedIn});
+
+                        self.tree
+                            .main_surface_mut()
+                            .push_to_focused_leaf(Tab::Terminal(new_terminal_panel));
+                        ui.close_menu();
+                    }
+
                     if ui.button("Universe").clicked() {
                         let event = UiEvent::SubscribeRequest {topic: DMXConfiguration};
                         if let Err(e) = self.ui_event_sender.send(event) {
