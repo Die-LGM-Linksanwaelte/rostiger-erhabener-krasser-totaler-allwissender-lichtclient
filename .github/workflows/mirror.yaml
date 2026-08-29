@@ -15,4 +15,4 @@ jobs:
 
       - name: Push to Codeberg
         run: |
-          git push --force https://${{ secrets.CODEBERG_TOKEN }}codeberg.org/LGM_Linksanwaelte/rostiger-erhabener-krasser-totaler-allwissender-lichtclient.git main:main
+          git push --force https://${{ secrets.CODEBERG_TOKEN }}@codeberg.org/LGM_Linksanwaelte/rostiger-erhabener-krasser-totaler-allwissender-lichtclient.git main:main
