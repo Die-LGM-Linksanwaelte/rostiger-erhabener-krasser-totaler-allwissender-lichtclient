@@ -212,7 +212,6 @@ pub(crate) fn handle_incoming_network_data(
                     });
                 }
                 TcpServerMessage::TopicUpdate { data } => {
-                    r_log!(Info, "{:?}", data.get_topic().to_string());
                     match data {
                         TopicPayload::DMXConfiguration(dmx_config) => {
                             for (_, tab) in tree.iter_all_tabs_mut() {
