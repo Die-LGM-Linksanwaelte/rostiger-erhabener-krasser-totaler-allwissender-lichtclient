@@ -245,7 +245,21 @@ pub(crate) fn handle_incoming_network_data(
                         }
                     }
                 },
-                _ => {}
+                TcpServerMessage::ShutdownAnnouncement => {
+                    send_ui_event(UiEvent::SetConnectionState {
+                        state: ConnectionState::Disconnected
+                    });
+                },
+                TcpServerMessage::Unauthenticated => {
+                    r_log!(UserError, "Server couldn't Unauthenticated");
+                }
+                TcpServerMessage::ReloginOk { .. } => {}
+                TcpServerMessage::ReloginFailed { .. } => {}
+                TcpServerMessage::Kicked { .. } => {}
+                TcpServerMessage::ImplicitCommandOutput { .. } => {}
+                TcpServerMessage::EditGranted { .. } => {}
+                TcpServerMessage::EditDenied { .. } => {}
+                TcpServerMessage::DropEditAck(_) => {}
             }
         }
     }
