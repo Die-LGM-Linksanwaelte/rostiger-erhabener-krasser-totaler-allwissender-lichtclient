@@ -100,12 +100,6 @@ fn handle_client(mut stream: TcpStream, connection_id: ConnectionID) {
 
 }
 
-/// Details of a protocol version mismatch encountered during a client handshake.
-struct VersionMismatch {
-    server_version: String,
-    client_version: String,
-}
-
 /// Represents possible errors that can occur during the client handshake phase.
 enum HandshakeError {
     VersionMismatch {
@@ -364,8 +358,8 @@ fn update_login_status(
                 };
 
                 state.insert(new_token, ClientSession {
-                    user_name: user_name.clone(),
-                    user_role: *user_role,
+                    _user_name: user_name.clone(),
+                    _user_role: *user_role,
                     active_connection: Some((tx_channel.clone(), connection_id)),
                     subscriptions: vec![]
                 });

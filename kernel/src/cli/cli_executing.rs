@@ -87,9 +87,15 @@ fn execute_debug_command(line: String) -> (LogLevel, String) {
             let universe = 0;
 
             let mut channels = HashMap::new();
-            channels.insert(PropertyType::Color(ColorPropertyType::Red), ChannelParameter::new(0));
-            channels.insert(PropertyType::Color(ColorPropertyType::Green), ChannelParameter::new(1));
-            channels.insert(PropertyType::Color(ColorPropertyType::Blue), ChannelParameter::new(2));
+            channels.insert(
+                PropertyType::Color(ColorPropertyType::Red), ChannelParameter::new(0, universe)
+            );
+            channels.insert(
+                PropertyType::Color(ColorPropertyType::Green), ChannelParameter::new(1, universe)
+            );
+            channels.insert(
+                PropertyType::Color(ColorPropertyType::Blue), ChannelParameter::new(2, universe)
+            );
 
             let new_command = CliAction::FixtureNew {
                 name: fixture_type_name.clone(),
@@ -257,7 +263,7 @@ fn new_fixture_type(name: String, channels: HashMap<PropertyType, ChannelParamet
         }
 
         Err(ChannelError(ChannelOutOfRange)) => {
-            (UserError,"Error: A Channel is higher than the size of the Universe. This is not yet supported".to_string())
+            (UserError,"Error: A Channel is higher than the size of the Universe. This is not yet supported".into())
         }
 
         Err(FixtureTypeNameAlreadyInUse(name)) => {

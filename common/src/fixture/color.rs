@@ -2,10 +2,7 @@ use std::cmp::{max, min, PartialEq};
 use std::fmt::{Display, Formatter};
 use serde::{Deserialize, Serialize};
 use OutputType::{CMY, HSV, RGB};
-use crate::fixture::{
-    Channel, ChannelError, ChannelIndex, ChannelValue, FixtureError, FloatChannelValue, PropertyType,
-    SignedChannelValue
-};
+use crate::fixture::{Channel, ChannelInUniverse, ChannelIndex, ChannelValue, FixtureError, FloatChannelValue, PropertyType, SignedChannelValue, UniverseIndex};
 use crate::fixture::channel::ChannelParameter;
 
 
@@ -223,11 +220,9 @@ impl Color {
     ///
     /// * `color_type`     - The template defining which channels and color model to use.
     /// * `device_channel` - The absolute DMX start address offset of the device.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`ChannelError::ChannelOutOfRange`] if any underlying channel exceeds the maximum allowed channel limit.
-    pub(super) fn new(color_type: &ColorType, device_channel: u16) -> Result<Self, ChannelError> {
+    pub(super) fn new(
+        color_type: &ColorType, device_channel: ChannelIndex, device_universe: UniverseIndex
+    ) -> Self {
         let default_value = if color_type.output_type == Some(CMY) {
             ChannelValue::MAX
         } else if let Some(_) = color_type.output_type {
@@ -238,19 +233,16 @@ impl Color {
         };
 
         let color1 = color_type.color1.clone()
-            .map(|c| Channel::new(c, default_value, device_channel))
-            .transpose()?;
+            .map(|c| Channel::new(c, default_value, device_channel, device_universe));
         let color2 = color_type.color2.clone()
-            .map(|c| Channel::new(c, default_value, device_channel))
-            .transpose()?;
+            .map(|c| Channel::new(c, default_value, device_channel, device_universe));
         let color3 = color_type.color3.clone()
-            .map(|c| Channel::new(c,default_value, device_channel))
-            .transpose()?;
+            .map(|c| Channel::new(c,default_value, device_channel, device_universe));
 
         let output_type = color_type.output_type.unwrap();
 
 
-        Ok(Self {
+        Self {
             output_type,
             color1,
             color2,
@@ -265,7 +257,7 @@ impl Color {
             saturation: 0 as ChannelValue,
             value: 0 as ChannelValue,
 
-        })
+        }
     }
 
     /// Returns an iterator over all active property types and immutable references to their channels.
@@ -383,7 +375,7 @@ impl Color {
         self.hue = hue;
         self.saturation = saturation;
         self.value = value;
-        //Achtung: es folgt eine unstetige Kackfunktion
+        //Warning: a discontinuous piece-of-git function follows
         let c = (value as FloatChannelValue *
             (saturation as FloatChannelValue / ChannelValue::MAX as FloatChannelValue)).round() as ChannelValue;
         let m = value.saturating_sub(c);
@@ -454,7 +446,7 @@ impl Color {
     /// Returns the current DMX output values of all active color channels.
     ///
     /// Each entry is a `(channel_index, 8-bit value)` pair via [`Channel::get_all_values`].
-    pub(super) fn get_values(&self) -> Vec<(ChannelIndex, u8)> {
+    pub(super) fn get_values(&self) -> Vec<(ChannelInUniverse, u8)> {
         let mut output = Vec::new();
 
         if let Some(c) = self.color1.as_ref() {
