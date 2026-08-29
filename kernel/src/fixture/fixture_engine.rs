@@ -154,23 +154,29 @@ impl FixtureEngine {
     fn new_fixture(
         &mut self, name: String, fixture_type_name: String, start_channel: ChannelIndex, start_universe: usize
     ) -> Result<(), FixtureError> {
-        self.ensure_universe_size(start_universe + 1);
-
         let fixture = Fixture::new(
             fixture_type_name, start_channel,start_universe, name.clone()
         )?;
 
+        let max_universe = fixture
+            .iter_over_properties()
+            .flat_map(|(_, channel)| channel.get_channel_indices())
+            .map(|(_, universe_index)| universe_index)
+            .max()
+            .unwrap_or(start_universe);
+
+        self.ensure_universe_size(max_universe + 1);
+
         //Pending Reservation
         fixture.iter_over_properties().try_for_each(|(_, channel)| {
-            let universe = self.dmx_config.get_mut(start_universe)
-                .ok_or(UniverseOutOfRange)?;
-
-            for channel in channel.get_channel_indices() {
-                if let Reserved(existing, property, _) = &universe[channel as usize] {
+            for (channel_index, universe_index) in channel.get_channel_indices() {
+                let universe = self.dmx_config.get_mut(universe_index)
+                    .ok_or(UniverseOutOfRange)?;
+                if let Reserved(existing, property, _) = &universe[channel_index as usize] {
                     return Err(ChannelAlreadyInUse(format!("{}, {}", existing, property)));
                 }
 
-                universe[channel as usize] = Pending(name.clone())
+                universe[channel_index as usize] = Pending(name.clone())
             }
 
             Ok(())
@@ -185,13 +191,13 @@ impl FixtureEngine {
 
         //Finalize Reservation
         fixture.iter_over_properties().try_for_each(|(property, channel)| {
-            let universe = self.dmx_config.get_mut(start_universe)
-                .ok_or(UniverseOutOfRange)?;
-
             let mut fine_degree = 0;
 
-            for channel in channel.get_channel_indices() {
-                let ch_index = channel as usize;
+            for (channel_index, universe_index) in channel.get_channel_indices() {
+                let universe = self.dmx_config.get_mut(universe_index)
+                    .ok_or(UniverseOutOfRange)?;
+
+                let ch_index = channel_index as usize;
 
                 match &universe[ch_index] {
                     Pending(existing) if *existing == name => {
@@ -229,9 +235,6 @@ impl FixtureEngine {
     fn move_fixture(
         &mut self, name: String, new_channel: ChannelIndex, new_universe: usize
     ) -> Result<(), FixtureError> {
-
-        self.ensure_universe_size(new_universe + 1);
-
         let mut fixture_original = self.fixtures.get_mut(&name).ok_or(InvalidFixture(name.clone()))?
             .clone();
 
@@ -239,19 +242,29 @@ impl FixtureEngine {
         let mut fixture_clone = fixture_original.clone();
         fixture_clone.move_to_channel(new_channel, new_universe)?;
 
+        let max_universe = fixture_clone
+            .iter_over_properties()
+            .flat_map(|(_, channel)| channel.get_channel_indices())
+            .map(|(_, uni_idx)| uni_idx)
+            .max()
+            .unwrap_or(new_universe);
+
+        self.ensure_universe_size(max_universe + 1);
+
         // Reserve Pending
         fixture_clone.iter_over_properties().try_for_each(|(_, channel)| {
-            let universe = self.dmx_config.get_mut(new_universe)
-                .ok_or(UniverseOutOfRange)?;
 
-            for channel in channel.get_channel_indices() {
-                match &universe[channel as usize] {
+            for (channel_index, universe_index) in channel.get_channel_indices() {
+                let universe = self.dmx_config.get_mut(universe_index)
+                    .ok_or(UniverseOutOfRange)?;
+
+                match &universe[channel_index as usize] {
                     Reserved(existing, _, _) if existing == &name => {}
                     Reserved(existing, property, _) => {
                         return Err(ChannelAlreadyInUse(format!("{}, {}", existing, property)));
                     }
                     _ => {
-                        universe[channel as usize] = Pending(name.clone())
+                        universe[channel_index as usize] = Pending(name.clone())
                     }
                 }
             }
@@ -264,13 +277,13 @@ impl FixtureEngine {
 
         // Reserve final
         fixture_clone.iter_over_properties().try_for_each(|(property, channel)| {
-            let universe = self.dmx_config.get_mut(new_universe)
-                .ok_or(UniverseOutOfRange)?;
-
             let mut fine_degree = 0;
 
-            for channel in channel.get_channel_indices() {
-                let ch_index = channel as usize;
+            for (channel_index, universe_index) in channel.get_channel_indices() {
+                let universe = self.dmx_config.get_mut(universe_index)
+                    .ok_or(UniverseOutOfRange)?;
+
+                let ch_index = channel_index as usize;
 
                 match &universe[ch_index] {
                     Pending(existing) if *existing == name => {
@@ -381,18 +394,19 @@ impl FixtureEngine {
     /// * [`DmxStateDesync`] - if the DMX-State and the fixture registry are out of sync
     fn remove_reservations(&mut self, fixture: &mut Fixture) -> Result<(), FixtureError> {
         let name = fixture.get_name();
-        fixture.iter_over_properties().try_for_each(|(_, channel)| {
-            let universe = self.dmx_config.get_mut(fixture.get_universe())
-                .ok_or(UniverseOutOfRange)?;
 
-            for channel in channel.get_channel_indices() {
-                match &universe[channel as usize] {
+        fixture.iter_over_properties().try_for_each(|(_, channel)| {
+            for (channel_index, universe_index) in channel.get_channel_indices() {
+                let universe = self.dmx_config.get_mut(universe_index)
+                    .ok_or(UniverseOutOfRange)?;
+
+                match &universe[channel_index as usize] {
                     Reserved(existing, _, _) if *existing == *name => {}
                     _ => {
                         return Err(DmxStateDesync);
                     }
                 }
-                universe[channel as usize] = Empty;
+                universe[channel_index as usize] = Empty;
             }
 
             Ok(())

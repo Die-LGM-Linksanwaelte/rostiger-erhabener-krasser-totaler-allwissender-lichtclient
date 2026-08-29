@@ -5,7 +5,7 @@
 //! displays live channel values, and optionally overlays patched fixture devices and property types.
 
 use crate::network::udp_client::MAX_CHANNEL;
-pub use common::fixture::channel::PropertyType;
+pub use common::fixture::PropertyType;
 use common::networking::subscription_objects::{
     DMXConfigForClientState, DMXConfigurationForClient,
 };

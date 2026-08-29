@@ -48,6 +48,14 @@ pub type ChannelIndex = u16;
 /// The maximum number of DMX-Channels per universe (DMX512 standard).
 pub const MAX_CHANNEL: ChannelIndex = 512;
 
+/// The index type used to uniquely identify and address distinct DMX universes.
+pub type UniverseIndex = usize;
+
+/// A composite identifier representing a specific channel within a designated universe.
+///
+/// Combines a [`ChannelIndex`] and a [`UniverseIndex`] to pinpoint a unique DMX endpoint.
+pub type ChannelInUniverse = (ChannelIndex, UniverseIndex);
+
 /// Global registry storing all registered fixture types mapped by their unique name.
 static FIXTURE_TYPE_LIST: LazyLock<RwLock<HashMap<String, FixtureType>>> =
     LazyLock::new(|| RwLock::new(HashMap::new()));
@@ -84,14 +92,17 @@ impl Fixture {
     /// # Errors
     ///
     /// * [`InvalidFixtureType`] – if `fixture_type_name` is not registered
-    /// * [`ChannelOutOfRange`](ChannelError::ChannelOutOfRange) – if any required channel is out of bounds 
-    /// ([MAX_CHANNEL]).
     pub fn new(
         fixture_type_name: String,
         start_channel: ChannelIndex,
         universe: usize,
         name: String,
     ) -> Result<Fixture, FixtureError> {
+
+        if start_channel > MAX_CHANNEL {
+            return Err(FixtureError::ChannelError(ChannelError::ChannelOutOfRange));
+        }
+
         let list = FIXTURE_TYPE_LIST.read().unwrap();
 
         let fixture_type = list.get(fixture_type_name.as_str())
@@ -100,15 +111,14 @@ impl Fixture {
         let color = fixture_type
             .color
             .as_ref()
-            .map(|c| Color::new(c, start_channel))
-            .transpose()?;
+            .map(|c| Color::new(c, start_channel, universe));
 
         let properties = fixture_type
             .properties
             .iter()
             .map(|(property_type, channel)| {
                 let default_value = Channel::get_default_value(property_type.clone());
-                let channel = Channel::new(channel.clone(), default_value, start_channel)?;
+                let channel = Channel::new(channel.clone(), default_value, start_channel, universe);
                 Ok((property_type.clone(), channel))
             })
             .collect::<Result<HashMap<SimplePropertyType, Channel>, ChannelError>>()?;
@@ -163,10 +173,11 @@ impl Fixture {
     /// * [`ChannelOutOfRange`](ChannelError::ChannelOutOfRange) – if the new channel range is out of bounds 
     pub fn move_to_channel(&mut self, new_channel: ChannelIndex, new_universe: usize) -> Result<(), FixtureError> {
 
-        let old_start = self.start_channel;
+        let old_start = (self.start_channel, self.universe);
+        let new_start = (new_channel, new_universe);
 
         self.iter_mut_over_properties().try_for_each(|(_, channel)| {
-            channel.move_channels(old_start, new_channel)?;
+            channel.move_channels(old_start, new_start);
 
             Ok::<(), ChannelError>(())
         }).map_err(FixtureError::from)?;
@@ -215,8 +226,8 @@ impl Fixture {
         Ok(())
     }
 
-    fn get_channel_values(&self) -> Vec<(ChannelIndex, u8)> {
-        let mut output: Vec<(ChannelIndex, u8)> =
+    fn get_channel_values(&self) -> Vec<(ChannelInUniverse, u8)> {
+        let mut output: Vec<(ChannelInUniverse, u8)> =
             self.properties.iter()
                 .flat_map(|(_, channel)| channel.get_all_values())
                 .collect();
@@ -226,11 +237,6 @@ impl Fixture {
         }
 
         output
-    }
-
-    /// Returns the DMX universe index this fixture is assigned to.
-    pub fn get_universe(&self) -> usize {
-        self.universe
     }
 
     /// Returns the name of the [`FixtureType`] this fixture was created from.
@@ -293,19 +299,21 @@ pub fn calculate_dmx_values(universe_count: usize, fixture_list: &[Fixture]) -> 
     let mut output = vec![[0u8; MAX_CHANNEL as usize]; universe_count];
 
     fixture_list.iter().for_each(|fixture| {
-        let universe_number = fixture.get_universe();
         let fixture_type = fixture.get_fixture_type();
         let fixture_name = fixture.get_name();
 
-        if universe_number < universe_count {
-            fixture
-                .get_channel_values()
-                .iter()
-                .for_each(|(channel, value)| {
+        fixture
+            .get_channel_values()
+            .iter()
+            .for_each(|(channel_in_universe, value)| {
+                let channel_index = channel_in_universe.0;
+                let universe_index = channel_in_universe.1;
+
+                if universe_index < universe_count {
                     *output
-                        .get_mut(universe_number)
+                        .get_mut(universe_index)
                         .unwrap()
-                        .get_mut(*channel as usize)
+                        .get_mut(channel_index as usize)
                         .ok_or(ChannelError::ChannelOutOfRange)
                         .unwrap_or_else(|_| {
                             panic!(
@@ -313,8 +321,8 @@ pub fn calculate_dmx_values(universe_count: usize, fixture_list: &[Fixture]) -> 
                                 fixture_name, fixture_type
                             )
                         }) = *value;
-                });
-        }
+                }
+            });
     });
 
     output

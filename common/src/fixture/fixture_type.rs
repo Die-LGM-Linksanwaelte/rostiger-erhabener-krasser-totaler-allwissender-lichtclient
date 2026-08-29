@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use serde::{Deserialize, Serialize};
 use crate::fixture::color::ColorType;
-use crate::fixture::{ChannelError, FixtureError, FIXTURE_TYPE_LIST, MAX_CHANNEL};
+use crate::fixture::{ChannelError, FixtureError, FIXTURE_TYPE_LIST};
 use crate::fixture::channel::{ChannelParameter, PropertyType, SimplePropertyType};
 
 /// A template defining the DMX-Channel layout for a type of lighting fixture.
@@ -54,10 +54,6 @@ impl FixtureType {
                     return Err(FixtureError::ChannelError(
                         ChannelError::ChannelAlreadyInUse(key.to_string()),
                     ));
-                }
-
-                if channel > MAX_CHANNEL {
-                    return Err(FixtureError::ChannelError(ChannelError::ChannelOutOfRange));
                 }
             }
 

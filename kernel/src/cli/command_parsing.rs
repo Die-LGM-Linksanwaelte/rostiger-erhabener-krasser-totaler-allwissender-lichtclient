@@ -132,7 +132,7 @@ fn parse_new_fixture_type(mut args: SplitAsciiWhitespace) -> Result<CliAction,St
         let channel_index = match channel.parse::<ChannelIndex>() {
             Ok(channel) => channel,
             Err(_) => {
-                return Err("Error: \"{channel}\" is not a valid channel-number".to_string());
+                return Err(format!("ErrorPenis: \"{channel}\" is not a valid channel-number"));
             }
         };
 
@@ -152,7 +152,7 @@ fn parse_new_fixture_type(mut args: SplitAsciiWhitespace) -> Result<CliAction,St
 
             match properties.get_mut(&property_type) {
                 Some(channel_object) => {
-                    match channel_object.add_fine(fine_degree.into(), channel_index) {
+                    match channel_object.add_fine(fine_degree.into(), channel_index, 0) {
                         Err(FineDegreeTooHigh(f)) =>
                             return Err(format!("Fine-degree {} is too high, add the lower ones first", f)),
                         Err(FineDegreeExists(f)) =>
@@ -175,7 +175,7 @@ fn parse_new_fixture_type(mut args: SplitAsciiWhitespace) -> Result<CliAction,St
             let property_type = parse_property_type(property_name)?;
 
             if !properties.contains_key(&property_type) {
-                properties.insert(property_type, ChannelParameter::new(channel_index));
+                properties.insert(property_type, ChannelParameter::new(channel_index, 0));
             } else {
                 return Err(format!("{property_name} can only have one coarse Channel"))
             }
@@ -319,7 +319,7 @@ pub(super) fn parse_cli_value(input: &str) -> Result<ChannelValue,String> {
                 Ok(raw_value.round() as ChannelValue)
             }
             Ok(_) => Err(format!("\"{}\" must be between 0 and 100.", percent_string)),
-            Err(_) => Err(format!("Invalid percantage format {}", percent_string)),
+            Err(_) => Err(format!("Invalid percentage format {}", percent_string)),
         }
     } else if let Some(hex_str) = input_str.strip_prefix("#") {
         let hex_len = hex_str.len();
@@ -359,7 +359,7 @@ pub(super) fn parse_cli_value(input: &str) -> Result<ChannelValue,String> {
 /// Returns an error string if the format is missing a dot or if the numbers are out of valid bounds.
 fn parse_universe_and_channel(mut args: SplitAsciiWhitespace) -> Result<(usize, ChannelIndex),String> {
     let parsed_string = args.next().unwrap();
-    let (universe, channel) = match parsed_string.split_once(".") {
+    let (universe, channel_string) = match parsed_string.split_once(".") {
         Some(pair) => pair,
         None => return Err("Error: Please specify the channel with [universe].[channel]".to_string()),
     };
@@ -370,10 +370,10 @@ fn parse_universe_and_channel(mut args: SplitAsciiWhitespace) -> Result<(usize, 
         }
     };
 
-    let channel = match channel.parse::<ChannelIndex>() {
+    let channel = match channel_string.parse::<ChannelIndex>() {
         Ok(channel) => channel,
         Err(_) => {
-            return Err(format!("Error: \"{}\" is not a valid channel-number", channel))
+            return Err(format!("Error: \"{}\" is not a valid channel-number", channel_string))
         }
     };
     Ok((universe, channel))
