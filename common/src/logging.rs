@@ -4,7 +4,7 @@ use std::path::Path;
 use std::fmt::Formatter;
 use std::io::Write;
 use std::sync::{mpsc, Arc, Mutex, OnceLock, RwLock};
-use std::sync::mpsc::Sender;
+use std::sync::mpsc::SyncSender;
 use chrono::{DateTime, Local};
 use serde::{Deserialize, Serialize};
 
@@ -71,7 +71,7 @@ pub struct Logger {
     /// Thread-safe collection of all registered log sinks.
     sinks: Arc<RwLock<Vec<Box<dyn LogSink>>>>,
     /// Sender channel used to dispatch messages to the background logging thread.
-    log_tx: Sender<LogMessage>,
+    log_tx: SyncSender<LogMessage>,
 }
 
 impl Logger {
@@ -79,7 +79,7 @@ impl Logger {
     pub fn global() -> &'static Logger {
         static LOGGER: OnceLock<Logger> = OnceLock::new();
         LOGGER.get_or_init(|| {
-            let (tx, rx) = mpsc::channel::<LogMessage>();
+            let (tx, rx) = mpsc::sync_channel::<LogMessage>(16_384);
             let sinks = Arc::new(RwLock::new(Vec::<Box<dyn LogSink>>::new()));
 
             let thread_sinks = sinks.clone();
@@ -124,8 +124,9 @@ impl Logger {
             timestamp: Local::now(),
             is_debug,
         };
-
-        let _ = self.log_tx.send(msg);
+        // Drop-on-full: logging must never backpressure the caller or balloon memory.
+        // try_send fails silently when the bounded queue is saturated or the receiver is gone.
+        let _ = self.log_tx.try_send(msg);
     }
 }
 

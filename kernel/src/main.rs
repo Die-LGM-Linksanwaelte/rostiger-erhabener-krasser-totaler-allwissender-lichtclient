@@ -60,10 +60,20 @@ fn main() -> io::Result<()> {
         io::stdout().flush()?;
 
         let mut input = String::new();
-        if let Err(e) = io::stdin().read_line(&mut input) {
-            r_log!(UserError, "Terminal input stream contained invalid UTF-8 (e.g. from deleting special characters).\
-             Discarding input. Error: {}", e);
-            continue;
+        match io::stdin().read_line(&mut input) {
+            Err(e) => {
+                r_log!(UserError, "Terminal input stream contained invalid UTF-8 (e.g. from deleting special characters).\
+                 Discarding input. Error: {}", e);
+                continue;
+            }
+            // EOF: stdin is closed (e.g. when launched detached by the launcher).
+            // Stop polling stdin but keep serving network clients from the worker threads.
+            Ok(0) => {
+                r_log!(Warning, "Stdin closed. Kernel keeps running in the background.\
+                 Attach a terminal to use the CLI; shutdown via 'exit' requires an attached stdin.");
+                loop { thread::park(); }
+            }
+            Ok(_) => {}
         }
 
         let input = input.trim().to_string();
