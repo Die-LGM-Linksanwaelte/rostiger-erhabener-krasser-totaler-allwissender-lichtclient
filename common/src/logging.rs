@@ -3,7 +3,7 @@ use std::fs::{File, OpenOptions};
 use std::path::Path;
 use std::fmt::Formatter;
 use std::io::Write;
-use std::sync::{mpsc, Arc, Mutex, OnceLock, RwLock};
+use std::sync::{mpsc, Mutex, OnceLock, RwLock};
 use std::sync::mpsc::SyncSender;
 use chrono::{DateTime, Local};
 use serde::{Deserialize, Serialize};
@@ -66,51 +66,55 @@ pub trait LogSink: Send + Sync {
     fn receive(&self, msg: &LogMessage);
 }
 
-/// The central logging dispatcher that routes messages to all registered sinks via a background thread.
+/// The central logging dispatcher that routes messages to all registered sinks.
+///
+/// Unlike a single shared background thread, each registered [`LogSink`] runs on its
+/// own dedicated thread with its own bounded queue. This ensures that a slow or
+/// blocking sink (e.g. a [`TerminalSink`] waiting on a locked `stdout`) can never
+/// delay or starve any other sink.
 pub struct Logger {
-    /// Thread-safe collection of all registered log sinks.
-    sinks: Arc<RwLock<Vec<Box<dyn LogSink>>>>,
-    /// Sender channel used to dispatch messages to the background logging thread.
-    log_tx: SyncSender<LogMessage>,
+    /// One bounded sender queue per registered sink. Each queue feeds a dedicated
+    /// background thread that owns and drives its corresponding [`LogSink`].
+    sink_txs: RwLock<Vec<SyncSender<LogMessage>>>,
 }
 
 impl Logger {
     /// Retrieves or initializes the global singleton instance of the [`Logger`].
     pub fn global() -> &'static Logger {
         static LOGGER: OnceLock<Logger> = OnceLock::new();
-        LOGGER.get_or_init(|| {
-            let (tx, rx) = mpsc::sync_channel::<LogMessage>(16_384);
-            let sinks = Arc::new(RwLock::new(Vec::<Box<dyn LogSink>>::new()));
-
-            let thread_sinks = sinks.clone();
-
-            thread::spawn(move || {
-                while let Ok(msg) = rx.recv() {
-                    if let Ok(locked_sinks) = thread_sinks.read() {
-                        for sink in locked_sinks.iter() {
-                            sink.receive(&msg);
-                        }
-                    }
-                }
-            });
-
-            Logger {
-                sinks,
-                log_tx: tx,
-            }
+        LOGGER.get_or_init(|| Logger {
+            sink_txs: RwLock::new(Vec::new()),
         })
     }
 
-    /// Registers a new log sink to receive future messages.
+    /// Registers a new log sink and spawns a dedicated background thread for it.
+    ///
+    /// Each sink receives its own bounded [`SyncSender`]/[`Receiver`] pair and runs
+    /// entirely independently of every other registered sink. This means a slow sink
+    /// (e.g. one that waits on I/O) cannot block or delay message delivery to any
+    /// other sink.
     ///
     /// # Arguments
     ///
     /// * `sink` - A boxed instance implementing the [`LogSink`] trait
     pub fn add_sink(&self, sink: Box<dyn LogSink>) {
-        self.sinks.write().unwrap().push(sink);
+        let (tx, rx) = mpsc::sync_channel::<LogMessage>(4_096);
+
+        thread::spawn(move || {
+            while let Ok(msg) = rx.recv() {
+                sink.receive(&msg)
+            }
+        });
+
+        self.sink_txs.write().unwrap().push(tx);
     }
 
-    /// Creates and sends a new log message to the background processing thread.
+    /// Creates a new log message and dispatches it to every registered sink's queue.
+    ///
+    /// Delivery to each sink is non-blocking: if a sink's queue is full (e.g. because
+    /// its thread is stuck or too slow to keep up), the message is silently dropped
+    /// for that sink only. This guarantees that `dispatch` itself never blocks the
+    /// calling thread and that one saturated sink cannot affect delivery to others.
     ///
     /// # Arguments
     ///
@@ -124,9 +128,12 @@ impl Logger {
             timestamp: Local::now(),
             is_debug,
         };
-        // Drop-on-full: logging must never backpressure the caller or balloon memory.
-        // try_send fails silently when the bounded queue is saturated or the receiver is gone.
-        let _ = self.log_tx.try_send(msg);
+
+        if let Ok(txs) = self.sink_txs.read() {
+            for tx in txs.iter() {
+                let _ = tx.try_send(msg.clone());
+            }
+        }
     }
 }
 
