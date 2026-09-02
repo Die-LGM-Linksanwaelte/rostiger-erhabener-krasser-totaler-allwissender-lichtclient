@@ -15,7 +15,7 @@ pub fn artnet_loop() -> io::Result<()> {
     socket.set_broadcast(true)?;
 
     let mut sequence: u8 = 0;
-    println!("Starting artnet");
+    r_log!(Info, "Starting artnet");
 
     loop {
         let start = Instant::now();

@@ -77,7 +77,7 @@ impl TcpClient {
         let mut write_stream = match TcpStream::connect(&self.target) {
             Ok(stream) => stream,
             Err(e) => {
-                eprintln!("[System] Unable to connect to {}: {}", self.target, e);
+                r_log!(Error, "Unable to connect to {}: {}", self.target, e);
                 return;
             }
         };

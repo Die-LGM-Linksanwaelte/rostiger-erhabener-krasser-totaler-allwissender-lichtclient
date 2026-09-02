@@ -258,6 +258,17 @@ impl MyApp {
                         ui.close_menu();
                     }
 
+                    if ui.button("Patch").clicked() {
+                        let new_tab_id = self.next_tab_id;
+                        self.next_tab_id += 1;
+
+                        let new_patch_panel = panels::patch::PatchPanel::new(new_tab_id);
+                        self.tree
+                            .main_surface_mut()
+                            .push_to_focused_leaf(Tab::Patch(new_patch_panel));
+                        ui.close_menu();
+                    }
+
                     if ui.button("Universe").clicked() {
                         let event = UiEvent::SubscribeRequest {topic: DMXConfiguration};
                         if let Err(e) = self.ui_event_sender.send(event) {

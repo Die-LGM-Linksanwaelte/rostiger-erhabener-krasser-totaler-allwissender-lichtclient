@@ -349,11 +349,7 @@ impl UniversePanel {
                     egui::Stroke::new(stroke_width, border_color),
                 );
 
-                let display_name = if current_start == start {
-                    fixture_name.to_string()
-                } else {
-                    format!("{} (cont.)", fixture_name)
-                };
+                let display_name = fixture_name.to_string();
 
                 let font_size = 10.0;
                 let text_pos = bar_rect.center_top() + egui::vec2(0.0, 2.0);
@@ -442,11 +438,17 @@ impl UniversePanel {
                         ui.add_space(4.0);
                         if self.show_device_properties {
                             match &dmx_config {
-                                DMXConfigurationForClient::Reserved { property_type, .. } => {
-                                    let prop_str = match property_type {
-                                        PropertyType::Simple(simple) => format!("{:?}", simple),
-                                        PropertyType::Color(color) => format!("{:?}", color),
+                                DMXConfigurationForClient::Reserved { property_type, fine_degree, .. } => {
+                                    let mut prop_str = match property_type {
+                                        PropertyType::Simple(simple) => format!("{}", simple),
+                                        PropertyType::Color(color) => format!("{}", color),
                                     };
+                                    prop_str.push_str(match fine_degree {
+                                        1 => "_f1",
+                                        2 => "_f2",
+                                        3 => "_f3",
+                                        _ => "",
+                                    });
                                     ui.label(egui::RichText::new(prop_str).size(9.0));
                                 }
                                 DMXConfigurationForClient::Empty => {

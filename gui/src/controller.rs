@@ -18,7 +18,7 @@ use common::logging::LogLevel;
 use common::logging::LogLevel::*;
 use common::networking::messages::{TcpClientMessage, TcpServerMessage};
 use common::networking::subscription_objects::{SubscribeTopic, TopicPayload};
-use common::r_log;
+use common::{r_debug_log, r_log};
 use eframe::egui::Color32;
 use egui_dock::DockState;
 use std::fmt;
@@ -251,12 +251,21 @@ pub(crate) fn handle_incoming_network_data(
                     });
                 },
                 TcpServerMessage::Unauthenticated => {
-                    r_log!(UserError, "Server couldn't Unauthenticated");
+                    r_log!(UserError, "Server couldn't handle request: User Unauthenticated!");
                 }
-                TcpServerMessage::ReloginOk { .. } => {}
-                TcpServerMessage::ReloginFailed { .. } => {}
-                TcpServerMessage::Kicked { .. } => {}
-                TcpServerMessage::ImplicitCommandOutput { .. } => {}
+                TcpServerMessage::ReloginOk {token} => {
+                    r_log!(UserSuccess, "Relogin Successful! Token: {}", token);
+                    //TODO..
+                }
+                TcpServerMessage::ReloginFailed {reason} => {
+                    r_log!(UserError, "Relogin failed: {}", reason);
+                    //TODO..
+                }
+                TcpServerMessage::Kicked {reason} => {
+                    r_log!(UserError, "Client was kicked: {}", reason);
+                    //TODO
+                }
+                TcpServerMessage::ImplicitCommandOutput { .. } => {} //TODO..
                 TcpServerMessage::EditGranted { .. } => {}
                 TcpServerMessage::EditDenied { .. } => {}
                 TcpServerMessage::DropEditAck(_) => {}
@@ -282,7 +291,7 @@ pub(crate) fn handle_events(
     tree: &mut DockState<Tab>,
 ) {
     while let Ok(event) = ui_receiver.try_recv() {
-        r_log!(Info, "UIEvent: {}" ,event);
+        r_debug_log!(Info, "UIEvent: {}" ,event);
         match event {
             UiEvent::SendTerminalCommand { id, command } => {
                 process_terminal_command(id, command, tcp_sender, tree);

@@ -12,9 +12,11 @@ use common::r_log;
 pub mod terminal;
 /// Module implementing the visual DMX universe panel tab.
 pub mod universe;
+pub mod patch;
 
 use terminal::TerminalPanel;
 use universe::UniversePanel;
+use patch::PatchPanel;
 use crate::controller::UiEvent;
 use crate::UI_EVENT_SENDER;
 
@@ -25,6 +27,8 @@ pub enum Tab {
     Universe(UniversePanel),
     /// Tab displaying an interactive terminal command log.
     Terminal(TerminalPanel),
+    /// Tab
+    Patch(PatchPanel),
 }
 
 impl Tab {
@@ -33,6 +37,7 @@ impl Tab {
         match self {
             Tab::Universe(panel) => format!("Universe {}", panel.selected_universe),
             Tab::Terminal(_) => "Terminal".to_string(),
+            Tab::Patch(_) => "Patch".to_string(),
         }
     }
 
@@ -41,6 +46,7 @@ impl Tab {
         match self {
             Tab::Universe(panel) => format!("universe_tab_{}", panel.tab_id),
             Tab::Terminal(panel) => format!("terminal_tab_{}", panel.tab_id),
+            Tab::Patch(panel) => format!("patch_tab_{}", panel.tab_id),
         }
     }
 
@@ -52,6 +58,7 @@ impl Tab {
         match self {
             Tab::Universe(panel) => panel.ui(ui),
             Tab::Terminal(panel) => panel.ui(ui),
+            Tab::Patch(panel) => panel.ui(ui),
         }
     }
 
@@ -68,6 +75,11 @@ impl Tab {
                 }
             }
             Tab::Terminal(_) => {}
+            Tab::Patch(_) => {}
         }
+    }
+
+    pub fn on_close(&mut self) {
+        //TODO: Unsubscribe topics if needed
     }
 }
