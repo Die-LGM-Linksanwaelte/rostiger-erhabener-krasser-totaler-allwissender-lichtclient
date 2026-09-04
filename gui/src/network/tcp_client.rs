@@ -11,7 +11,6 @@ use common::networking::messages::{
     HandshakeRequest, HandshakeResponse, TcpClientMessage, TcpServerMessage,
 };
 use common::{networking, r_log};
-use std::env;
 use std::io::{Read, Write};
 use std::net::{Shutdown, TcpStream};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -82,13 +81,12 @@ impl TcpClient {
             }
         };
 
-        let client_version = env!("CARGO_PKG_VERSION");
-        let protocol_hash = networking::messages::get_protocol_version();
+        let (protocol_hash, client_version) = networking::messages::get_protocol_version();
 
         let req = HandshakeRequest {
             magic_string: "REKTAL".into(),
             protocol_hash,
-            client_version: client_version.into(),
+            client_version: client_version.clone(),
         };
 
         Self::set_connection_state(ConnectionState::ConnectionPending);
@@ -144,7 +142,7 @@ impl TcpClient {
             HandshakeResponse::Mismatch { server_version } => {
                 r_log!(
                     Error,
-                    "Version mismatch! this client has the version {}. Kernel has the version {}",
+                    "Version mismatch! This client has the version {}, Kernel has the version {}",
                     client_version,
                     server_version
                 );
