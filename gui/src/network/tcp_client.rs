@@ -11,7 +11,6 @@ use common::networking::messages::{
     HandshakeRequest, HandshakeResponse, TcpClientMessage, TcpServerMessage,
 };
 use common::{networking, r_log};
-use std::env;
 use std::io::{Read, Write};
 use std::net::{Shutdown, TcpStream};
 use std::sync::atomic::{AtomicBool, Ordering};

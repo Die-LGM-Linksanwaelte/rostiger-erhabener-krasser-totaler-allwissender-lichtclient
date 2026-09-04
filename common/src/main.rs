@@ -22,7 +22,6 @@ fn main() {
         .expect("Connection failed");
 
     // ...
-    let client_version = env!("CARGO_PKG_VERSION");
     let (protocol_hash, client_version) = common::networking::messages::get_protocol_version();
 
     let req = HandshakeRequest {
