@@ -143,8 +143,7 @@ fn check_version_compatibility(stream: &mut TcpStream) -> Result<(), HandshakeEr
                 return Err(HandshakeError::InvalidData("Wrong magic string. Client is not an Rektal-Client".into()));
             }
 
-            let server_hash = common::networking::messages::get_protocol_version();
-            let server_version = env!("CARGO_PKG_VERSION").to_string();
+            let (server_hash, server_version) = common::networking::messages::get_protocol_version();
 
             if request.protocol_hash != server_hash {
                 let response = HandshakeResponse::Mismatch {

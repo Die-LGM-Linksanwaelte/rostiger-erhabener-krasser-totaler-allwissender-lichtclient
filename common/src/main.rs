@@ -23,12 +23,12 @@ fn main() {
 
     // ...
     let client_version = env!("CARGO_PKG_VERSION");
-    let protocol_hash = common::networking::messages::get_protocol_version();
+    let (protocol_hash, client_version) = common::networking::messages::get_protocol_version();
 
     let req = HandshakeRequest {
         magic_string: "REKTAL".into(),
         protocol_hash,
-        client_version: client_version.into(),
+        client_version: client_version.clone(),
     };
 
     let payload = bincode::serialize(&req).unwrap();

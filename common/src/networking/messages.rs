@@ -175,6 +175,9 @@ impl fmt::Display for UserRole {
 }
 
 /// Retrieves the compile-time protocol hash to verify network message compatibility.
-pub fn get_protocol_version() -> String {
-    env!("PROTOCOL_HASH").to_string()
+pub fn get_protocol_version() -> (String, String) {
+    (
+        env!("PROTOCOL_HASH").to_string(),
+        env!("CARGO_PKG_VERSION").to_string()
+    )
 }

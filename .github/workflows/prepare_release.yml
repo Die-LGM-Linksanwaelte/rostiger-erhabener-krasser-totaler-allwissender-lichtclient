@@ -1,0 +1,41 @@
+name: Prepare Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version (without the 'v', e.g. 1.2.3)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  bump-and-tag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Set version in common/Cargo.toml
+        run: |
+          VERSION="${{ inputs.version }}"
+          sed -i "0,/^version = \".*\"/s//version = \"$VERSION\"/" common/Cargo.toml
+          grep -m1 '^version' common/Cargo.toml
+
+      - name: Commit version bump
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add common/Cargo.toml
+          git commit -m "chore: bump version to ${{ inputs.version }}"
+          git push
+
+      - name: Create and push tag
+        run: |
+          VERSION="v${{ inputs.version }}"
+          git tag "$VERSION"
+          git push origin "$VERSION"
