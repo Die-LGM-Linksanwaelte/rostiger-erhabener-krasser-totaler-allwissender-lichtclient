@@ -4,6 +4,11 @@
 //! Handles startup initialization, logger configuration, window icon embedding,
 //! `eframe` viewport setup, docking tab management, and high-level layout rendering.
 
+use crate::controller::{send_ui_event, UiEvent};
+use crate::network::connection_state::ConnectionState::Connected;
+use crate::network::udp_client;
+use crate::network::udp_client::MAX_CHANNEL;
+use common::fixture::FixtureType;
 use common::logging::LogLevel::*;
 use common::logging::{FileSink, Logger, TerminalSink};
 use common::networking::messages::UserRole;
@@ -11,18 +16,15 @@ use common::networking::messages::{TcpClientMessage, TcpServerMessage};
 use common::networking::subscription_objects::SubscribeTopic::DMXConfiguration;
 use common::r_log;
 use eframe::egui;
+use eframe::emath::Align;
+use egui::{vec2, Align2, Id, Layout, Order};
 use egui_dock::{DockArea, DockState, TabViewer};
-use std::sync::mpsc::{Receiver, Sender};
-use std::sync::{mpsc, LazyLock, RwLock};
-use std::net::ToSocketAddrs;
-use crate::controller::{send_ui_event, UiEvent};
-use crate::network::udp_client;
-use crate::network::udp_client::MAX_CHANNEL;
-use crate::network::connection_state::ConnectionState::Connected;
 use network::connection_state::{ConnectionState, SessionState};
 use network::tcp_client::TcpClient;
 use panels::Tab;
-use crate::network::connection_state::SessionState::LoggedIn;
+use std::net::ToSocketAddrs;
+use std::sync::mpsc::{Receiver, Sender};
+use std::sync::{mpsc, LazyLock, RwLock};
 
 mod controller;
 mod network;
@@ -38,13 +40,17 @@ pub static UI_EVENT_SENDER: LazyLock<RwLock<Option<Sender<UiEvent>>>> =
 /// and starts the `eframe` event loop with [`MyApp`].
 fn main() -> eframe::Result<()> {
     let log_path = std::env::temp_dir().join("rektal_gui.log");
-    Logger::global().add_sink(Box::new(FileSink::new(log_path.to_str().unwrap_or("/tmp/rektal_gui.log"))));
+    Logger::global().add_sink(Box::new(FileSink::new(
+        log_path.to_str().unwrap_or("/tmp/rektal_gui.log"),
+    )));
     Logger::global().add_sink(Box::new(TerminalSink { cli_prompt: None }));
 
     let icon = {
-        let image = img_crate::load_from_memory(include_bytes!("../assets/rektal-logo-without-title-32px.png"))
-            .expect("Icon konnte nicht geladen werden")
-            .into_rgba8();
+        let image = img_crate::load_from_memory(include_bytes!(
+            "../assets/rektal-logo-without-title-32px.png"
+        ))
+        .expect("Icon konnte nicht geladen werden")
+        .into_rgba8();
         let width = image.width();
         let height = image.height();
         egui::viewport::IconData {
@@ -105,9 +111,11 @@ pub struct MyApp {
     /// Password input buffer for authentication (cleared after login attempts).
     password: String,
     /// Temporary draft username used in the session settings window.
-    draft_username: String,
+    draft_username: String, //TODO save credentials in a config file?
     /// Temporary draft role selection used in the session settings window.
     draft_role: UserRole,
+
+    device_configuration: Option<Vec<FixtureType>>, //TODO Vec<Device>
 }
 
 impl MyApp {
@@ -145,6 +153,7 @@ impl MyApp {
             password: String::new(),
             draft_username: String::new(),
             draft_role: UserRole::Programmer,
+            device_configuration: None,
         };
 
         if let Some(target) = parse_args() {
@@ -171,11 +180,8 @@ impl MyApp {
             };
 
             if target_raw.to_socket_addrs().is_ok() {
-                let mut tcp_client = TcpClient::new(
-                    target_raw,
-                    tcp_write_receiver,
-                    tcp_listen_sender,
-                );
+                let mut tcp_client =
+                    TcpClient::new(target_raw, tcp_write_receiver, tcp_listen_sender);
                 tcp_client.start_tcp_client();
             } else {
                 r_log!(Error, "Failed to resolve server address: {}", target_raw);
@@ -243,14 +249,17 @@ impl MyApp {
                 });
 
                 ui.menu_button("Window", |ui| {
-
                     if ui.button("Terminal").clicked() {
                         let new_tab_id = self.next_tab_id;
                         self.next_tab_id += 1;
 
                         let new_terminal_panel = panels::terminal::TerminalPanel::new(
                             new_tab_id,
-                            self.connection_state == Connected{session_state: LoggedIn});
+                            self.connection_state
+                                == Connected {
+                                    session_state: SessionState::LoggedIn,
+                                },
+                        );
 
                         self.tree
                             .main_surface_mut()
@@ -270,7 +279,9 @@ impl MyApp {
                     }
 
                     if ui.button("Universe").clicked() {
-                        let event = UiEvent::SubscribeRequest {topic: DMXConfiguration};
+                        let event = UiEvent::SubscribeRequest {
+                            topic: DMXConfiguration,
+                        };
                         if let Err(e) = self.ui_event_sender.send(event) {
                             r_log!(Error, "Failed to send UiEvent: {}", e);
                         }
@@ -293,12 +304,136 @@ impl MyApp {
     ///
     /// # Arguments
     /// * `ctx` - The `egui::Context` reference.
-    fn draw_central_panel(&mut self, ctx: &egui::Context) {
+    fn draw_central_panel(&mut self, ctx: &egui::Context, is_active: bool) {
         egui::CentralPanel::default().show(ctx, |ui| {
-            let mut tab_viewer = MyTabViewer {};
-            DockArea::new(&mut self.tree)
-                .style(egui_dock::Style::from_egui(ui.style().as_ref()))
-                .show_inside(ui, &mut tab_viewer);
+            // 1. Schicker, moderner Scope für aktiviert / deaktiviert:
+            ui.add_enabled_ui(is_active, |ui| {
+                let mut tab_viewer = MyTabViewer {};
+                DockArea::new(&mut self.tree)
+                    .style(egui_dock::Style::from_egui(ui.style().as_ref()))
+                    .show_inside(ui, &mut tab_viewer);
+            });
+
+            // 2. Optischer Grauschleier, wenn inaktiv:
+            if !is_active {
+                let mut backdrop_rect = ctx.screen_rect();
+                // Variante A (Empfohlen): Hört exakt da auf, wo deine Bottom Bar anfängt:
+                backdrop_rect.max.y = ui.max_rect().max.y;
+
+                // Variante B (Feste 30 Pixel abziehen):
+                // backdrop_rect.max.y -= 30.0;
+                // A) Abgedunkelter Hintergrund (spart die Bottom Bar aus)
+                egui::Area::new(Id::new("modal_backdrop"))
+                    .fixed_pos(backdrop_rect.min)
+                    .order(Order::Middle)
+                    .show(ctx, |ui| {
+                        // Wichtig: backdrop_rect.size() übergeben, damit Klicks unten durchgehen!
+                        let (_response, painter) = ui
+                            .allocate_painter(backdrop_rect.size(), egui::Sense::click_and_drag());
+                        painter.rect_filled(
+                            backdrop_rect,
+                            0.0,
+                            egui::Color32::from_black_alpha(160),
+                        );
+                    });
+
+                // B) Das eigentliche Fenster im Vordergrund
+                egui::Window::new("Connect your Session!")
+                    .collapsible(false)
+                    .resizable(false)
+                    .anchor(Align2::CENTER_CENTER, vec2(0.0, 0.0)) // Immer zentriert
+                    .order(Order::Foreground) // Liegt garantiert über dem Backdrop
+                    .show(ctx, |ui| {
+                        egui::Grid::new("connection_seetings_grid")
+                            .num_columns(2)
+                            .show(ui, |ui| {
+                                ui.label("Server adress ");
+                                if ui.text_edit_singleline(&mut self.server_address).changed() {}
+                                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                                    if ui.button("connect").clicked() {
+                                        self.connect_to_server();
+                                    }
+                                });
+                            });
+                        ui.separator();
+
+                        if matches!(self.connection_state, Connected { .. }) {
+                            egui::Grid::new("session_seetings_grid")
+                                .num_columns(2)
+                                .show(ui, |ui| {
+                                    ui.label("Username ");
+                                    ui.text_edit_singleline(&mut self.draft_username);
+                                    ui.end_row();
+
+                                    ui.label("Role");
+                                    egui::ComboBox::from_id_source("role_combo")
+                                        .selected_text(match self.draft_role {
+                                            UserRole::Programmer => "Programmer",
+                                            UserRole::BlindProgrammer => "Programmer Blind",
+                                            UserRole::Showrunner => "Showrunner",
+                                        })
+                                        .show_ui(ui, |ui| {
+                                            ui.selectable_value(
+                                                &mut self.draft_role,
+                                                UserRole::Programmer,
+                                                "Programmer",
+                                            );
+                                            ui.selectable_value(
+                                                &mut self.draft_role,
+                                                UserRole::BlindProgrammer,
+                                                "Programmer Blind",
+                                            );
+                                            ui.selectable_value(
+                                                &mut self.draft_role,
+                                                UserRole::Showrunner,
+                                                "Showrunner",
+                                            );
+                                        });
+                                    ui.end_row();
+
+                                    ui.label("Password");
+                                    let password_edit =
+                                        egui::TextEdit::singleline(&mut self.password)
+                                            .password(true);
+                                    ui.add(password_edit);
+                                    ui.end_row();
+                                });
+                            ui.add_space(10.0);
+
+                            if let Connected {
+                                session_state: SessionState::LoginFailed(ref reason),
+                            } = self.connection_state
+                            {
+                                ui.label(
+                                    egui::RichText::new(format!(
+                                        "Login fehlgeschlagen: {}",
+                                        reason
+                                    ))
+                                    .color(egui::Color32::RED),
+                                );
+                                ui.add_space(10.0);
+                            }
+
+                            ui.with_layout(Layout::right_to_left(Align::TOP), |ui| {
+                                if ui.button("Login").clicked() {
+                                    self.username = self.draft_username.clone();
+                                    self.role = self.draft_role.clone();
+
+                                    let event = UiEvent::LoginRequest {
+                                        user_name: self.username.clone(),
+                                        password: self.password.clone(),
+                                        user_role: self.role.clone(),
+                                    };
+                                    if let Err(e) = self.ui_event_sender.send(event) {
+                                        r_log!(Error, "Failed to send UiEvent: {}", e);
+                                    }
+                                    self.password.clear();
+                                }
+                            });
+                            ui.add_space(10.0);
+                        }
+                    });
+            }
         });
     }
 
@@ -315,7 +450,7 @@ impl MyApp {
                 .open(&mut is_connection_open)
                 .collapsible(false)
                 .resizable([false, false])
-                .pivot(egui::Align2::CENTER_CENTER)
+                .pivot(Align2::CENTER_CENTER)
                 .show(ctx, |ui| {
                     egui::Grid::new("connection_seetings_grid")
                         .num_columns(2)
@@ -325,7 +460,7 @@ impl MyApp {
                         });
                     ui.add_space(10.0);
 
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::TOP), |ui| {
+                    ui.with_layout(Layout::right_to_left(Align::TOP), |ui| {
                         if ui.button("Connect").clicked() {
                             self.connect_to_server();
                             request_conn_close = true;
@@ -355,7 +490,7 @@ impl MyApp {
                 .open(&mut is_session_open)
                 .collapsible(false)
                 .resizable([false, false])
-                .pivot(egui::Align2::CENTER_CENTER)
+                .pivot(Align2::CENTER_CENTER)
                 .show(ctx, |ui| {
                     egui::Grid::new("session_seetings_grid")
                         .num_columns(2)
@@ -409,7 +544,7 @@ impl MyApp {
                         ui.add_space(10.0);
                     }
 
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::TOP), |ui| {
+                    ui.with_layout(Layout::right_to_left(Align::TOP), |ui| {
                         if ui.button("Login").clicked() {
                             self.username = self.draft_username.clone();
                             self.role = self.draft_role.clone();
@@ -456,7 +591,7 @@ impl MyApp {
                         }
                     },
                 };
-                let (rect, _) = ui.allocate_exact_size(egui::vec2(8.0, 8.0), egui::Sense::hover());
+                let (rect, _) = ui.allocate_exact_size(vec2(8.0, 8.0), egui::Sense::hover());
                 ui.painter().circle_filled(rect.center(), 4.0, status_color);
                 if let Connected {
                     session_state: SessionState::LoggedIn,
@@ -467,7 +602,7 @@ impl MyApp {
                     ui.label("Logged out");
                 }
 
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     ui.label(format!(
                         "R.E.K.T.A.L. Version: {}",
                         env!("CARGO_PKG_VERSION")
@@ -485,10 +620,7 @@ impl eframe::App for MyApp {
     /// then renders all UI components and panels.
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         controller::handle_dmx_data(&self.dmx_receiver, &mut self.tree);
-        controller::handle_incoming_network_data(
-            &mut self.tcp_listen_receiver,
-            &mut self.tree,
-        );
+        controller::handle_incoming_network_data(&mut self.tcp_listen_receiver, &mut self.tree);
         controller::handle_events(
             &self.ui_event_receiver,
             &mut self.tcp_write_sender,
@@ -496,9 +628,14 @@ impl eframe::App for MyApp {
             &mut self.tree,
         );
 
+        let is_active = self.connection_state
+            == Connected {
+                session_state: SessionState::LoggedIn,
+            };
+
         self.draw_top_bar(ctx);
         self.draw_bottom_bar(ctx);
-        self.draw_central_panel(ctx);
+        self.draw_central_panel(ctx, is_active);
         self.draw_connection_settings(ctx);
         self.draw_session_settings(ctx);
     }
@@ -552,7 +689,7 @@ impl TabViewer for MyTabViewer {
     }
 
     /// Returns the unique `egui::Id` identifier for tab tracking.
-    fn id(&mut self, tab: &mut Self::Tab) -> egui::Id {
-        egui::Id::new(tab.unique_id())
+    fn id(&mut self, tab: &mut Self::Tab) -> Id {
+        Id::new(tab.unique_id())
     }
 }
