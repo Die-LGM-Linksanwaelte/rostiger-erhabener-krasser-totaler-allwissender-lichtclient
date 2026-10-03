@@ -4,6 +4,7 @@
 //! It exposes the [`Tab`] enum encapsulating various panel components like [`UniversePanel`] and [`TerminalPanel`].
 
 use eframe::egui;
+use serde::{Deserialize, Serialize};
 use common::logging::LogLevel::Error;
 use common::networking::subscription_objects::SubscribeTopic::DMXConfiguration;
 use common::r_log;
@@ -12,6 +13,7 @@ use common::r_log;
 pub mod terminal;
 /// Module implementing the visual DMX universe panel tab.
 pub mod universe;
+/// Module implementing the patch panel tab.
 pub mod patch;
 
 use terminal::TerminalPanel;
@@ -19,6 +21,14 @@ use universe::UniversePanel;
 use patch::PatchPanel;
 use crate::controller::UiEvent;
 use crate::UI_EVENT_SENDER;
+
+/// Enum
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub enum TabSaveData {
+    Terminal,
+    Patch,
+    Universe { selected_universe: u8 },
+}
 
 /// Enum representing all dockable tab types supported in the user interface.
 #[derive(Clone)]

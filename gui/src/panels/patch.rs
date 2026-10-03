@@ -22,7 +22,7 @@ impl PatchPanel {
         });
     }
 
-    fn draw_universe_overview(&self, ui: &mut egui::Ui) {
+    fn draw_universe_overview(&self, _ui: &mut egui::Ui) {
 
     }
 }

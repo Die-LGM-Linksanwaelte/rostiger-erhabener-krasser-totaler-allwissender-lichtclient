@@ -9,11 +9,13 @@
 //! - Processing network messages ([`TcpServerMessage`]) received from the kernel server.
 //! - Handling UI action events and updating central application states ([`ConnectionState`], [`SessionState`]).
 
+use crate::configuration::GuiLayout;
 use crate::network::connection_state::SessionState::{LoggedIn, LoggedOut, LoginFailed};
 use crate::network::connection_state::{ConnectionState, SessionState};
 use crate::network::udp_client::MAX_CHANNEL;
+use crate::panels;
 use crate::panels::terminal::TextFragment;
-use crate::panels::Tab;
+use crate::panels::{Tab, TabSaveData};
 use common::logging::LogLevel;
 use common::logging::LogLevel::*;
 use common::networking::messages::{TcpClientMessage, TcpServerMessage};
@@ -21,15 +23,31 @@ use common::networking::subscription_objects::{SubscribeTopic, TopicPayload};
 use common::{r_debug_log, r_log};
 use eframe::egui::Color32;
 use egui_dock::DockState;
-use std::fmt;
 use std::fmt::{Display, Formatter};
+use std::fs::OpenOptions;
+use std::io::Write;
+use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, Sender};
+use std::fmt;
 
 /// Enum describing global GUI events dispatched across the application.
 ///
 /// These events represent user interactions or system actions that require
 /// coordination between UI panels, the central state, or network threads.
 pub enum UiEvent {
+    /// Updates the central connection and session states of the GUI application.
+    SetConnectionState {
+        /// The target connection state to apply.
+        state: ConnectionState,
+    },
+    ///Saves the Gui layout to a gui_config.json file
+    SaveGuiLayout {
+        path: PathBuf,
+    },
+    LoadGuiLayout {
+        path: PathBuf,
+    },
+    ResetGuiLayout,
     /// Sends a command entered in a terminal panel to the kernel server (or processes built-in commands).
     SendTerminalCommand {
         /// The unique ID of the terminal tab originating the command.
@@ -45,11 +63,6 @@ pub enum UiEvent {
         user_name: String,
         /// The requested user role (e.g., Programmer, Showrunner).
         user_role: common::networking::messages::UserRole,
-    },
-    /// Updates the central connection and session states of the GUI application.
-    SetConnectionState {
-        /// The target connection state to apply.
-        state: ConnectionState,
     },
     /// Requests a user session logout from the kernel server.
     LogoutRequest,
@@ -81,6 +94,9 @@ impl Display for UiEvent {
             UiEvent::LogoutRequest => write!(f, "LogoutRequest"),
             UiEvent::DisconnectRequest => write!(f, "DisconnectRequest"),
             UiEvent::SubscribeRequest { topic } => write!(f, "SubscribeRequest, topic: {}", topic),
+            UiEvent::SaveGuiLayout { path } => write!(f, "SaveGuiLayout: {}", path.display()),
+            UiEvent::LoadGuiLayout{path} => write!(f, "LoadGuiLayout: {}", path.display()),
+            UiEvent::ResetGuiLayout => write!(f, "ResetGuiLayout"),
         }
     }
 }
@@ -116,6 +132,112 @@ pub fn send_ui_event(event: UiEvent) {
             let _ = sender.send(event);
         }
     }
+}
+
+/// Maps a common [`LogLevel`] enum variant to a corresponding `egui` [`Color32`] for UI rendering.
+///
+/// # Arguments
+/// * `level` - The log level to convert.
+///
+/// # Returns
+/// An `egui::Color32` representing the log level.
+pub fn log_level_to_color32(level: LogLevel) -> Color32 {
+    match level {
+        SuccessEvent => Color32::GREEN,
+        Info => Color32::BLUE,
+        Warning => Color32::YELLOW,
+        Error => Color32::RED,
+        UserError => Color32::GOLD,
+        UserSuccess => Color32::LIGHT_GREEN,
+    }
+}
+
+pub fn save_gui_layout(path_buf: PathBuf, tree: &mut DockState<Tab>) {
+    if let Some(parent) = path_buf.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+
+    let file = match OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .open(&path_buf)
+    {
+        Ok(file) => file,
+        Err(e) => {
+            r_log!(Error, "Failed to open config file {:?}: {}", path_buf, e);
+            return;
+        }
+    };
+
+    let saved_layout = tree.map_tabs(|tab| {
+        match tab {
+            Tab::Universe(_) => TabSaveData::Universe {selected_universe: 1}, //TODO anpassen!
+            Tab::Terminal(_) => TabSaveData::Terminal,
+            Tab::Patch(_) => TabSaveData::Patch,
+        }
+    });
+
+    let gui_config = GuiLayout{
+        //TODO richtige werte anpassen!!!!
+
+        role: Default::default(),
+        name: "".to_string(),
+        description: "".to_string(),
+        window_layout: saved_layout,
+    };
+
+    if let Err(e) = serde_json::to_writer_pretty(file, &gui_config) { //TODO ordner erstellen falls er nicht existiert
+        r_log!(Error, "Failed to serialize GUI config: {}", e);
+    }
+}
+
+fn load_gui_layout(path_buf: PathBuf, tree: &mut DockState<Tab>) {
+    // 1. Datei NUR zum Lesen öffnen (ohne truncate!):
+    let file = match std::fs::File::open(&path_buf) {
+        Ok(f) => f,
+        Err(e) => {
+            r_log!(Warning, "Could not open layout file {:?}: {}", path_buf, e);
+            return;
+        }
+    };
+
+    // 2. Deserialisieren:
+    let gui_config: GuiLayout = match serde_json::from_reader(file) {
+        Ok(cfg) => cfg,
+        Err(e) => {
+            r_log!(Error, "Failed to parse GUI config: {}", e);
+            return;
+        }
+    };
+    // 1. Erstmal mappen (die Closure ist zustandslos und damit automatisch Clone):
+    *tree = gui_config.window_layout.map_tabs(|save_data| {
+        match save_data {
+            TabSaveData::Terminal => {
+                Tab::Terminal(panels::terminal::TerminalPanel::new(0, false))
+            }
+            TabSaveData::Patch => {
+                Tab::Patch(panels::patch::PatchPanel::new(0))
+            }
+            TabSaveData::Universe { selected_universe } => {
+                let mut panel = panels::universe::UniversePanel::new(0);
+                panel.selected_universe = *selected_universe;
+                Tab::Universe(panel)
+            }
+        }
+    });
+
+    // 2. Jetzt in einer normalen for-Schleife die IDs durchnummerieren:
+    let mut id = 1;
+    for (_, tab) in tree.iter_all_tabs_mut() {
+        match tab {
+            Tab::Terminal(p) => { p.tab_id = id; id += 1; }
+            Tab::Patch(p) => { p.tab_id = id; id += 1; }
+            Tab::Universe(p) => { p.tab_id = id; id += 1; }
+        }
+    }
+
+    r_log!(UserSuccess, "Successfully loaded GUI layout from {:?}", path_buf);
 }
 
 /// Processes a command entered into a terminal tab.
@@ -164,25 +286,6 @@ fn process_terminal_command(
         }
     }
 }
-
-/// Maps a common [`LogLevel`] enum variant to a corresponding `egui` [`Color32`] for UI rendering.
-///
-/// # Arguments
-/// * `level` - The log level to convert.
-///
-/// # Returns
-/// An `egui::Color32` representing the log level.
-pub fn log_level_to_color32(level: LogLevel) -> Color32 {
-    match level {
-        SuccessEvent => Color32::GREEN,
-        Info => Color32::BLUE,
-        Warning => Color32::YELLOW,
-        Error => Color32::RED,
-        UserError => Color32::GOLD,
-        UserSuccess => Color32::LIGHT_GREEN,
-    }
-}
-
 /// Drains incoming network messages ([`TcpServerMessage`]) from the TCP receiver channel
 /// and updates UI tabs or triggers connection state changes.
 ///
@@ -384,6 +487,15 @@ pub(crate) fn handle_events(
                         r_log!(Error, "Failed to send subscribe request: {}", e);
                     }
                 }
+            }
+            UiEvent::SaveGuiLayout { path } => {
+                save_gui_layout(path, tree);
+            }
+            UiEvent::LoadGuiLayout {path} => {
+                load_gui_layout(PathBuf::new().join(path), tree);
+            }
+            UiEvent::ResetGuiLayout => {
+                load_gui_layout(PathBuf::new().join("config/window_layouts/default.json"), tree);
             }
         }
     }
