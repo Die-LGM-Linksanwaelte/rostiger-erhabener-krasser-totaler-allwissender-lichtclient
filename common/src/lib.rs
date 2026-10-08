@@ -1,6 +1,6 @@
 //! # Common Crate
 //!
-//! This crate serves as the shared foundation for the Rektal lighting control system,
+//! This crate serves as the shared foundation for the Photon lighting control system,
 //! providing the core data structures, protocols, and utilities utilized by both the
 //! server engine and connected clients. By centralizing these definitions, it ensures
 //! strict synchronization and compatibility across the entire application ecosystem.

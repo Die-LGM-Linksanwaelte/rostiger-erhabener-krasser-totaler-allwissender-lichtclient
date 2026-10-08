@@ -1,6 +1,6 @@
 //! # Network Module
 //!
-//! This module encapsulates all network communications for the R.E.K.T.A.L. GUI application.
+//! This module encapsulates all network communications for the Photon GUI application.
 //! It includes TCP client logic for control commands and responses, UDP client logic for
 //! high-frequency DMX streams, and central connection state management.
 

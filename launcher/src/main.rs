@@ -1,7 +1,7 @@
-//! # R.E.K.T.A.Launcher Application
+//! # Photon Launcher Application
 //!
 //! Entry point and GUI application for starting, monitoring, and managing
-//! REKTAL Kernel server instances and GUI client processes.
+//! Photon Kernel server instances and GUI client processes.
 //!
 //! ## Overview
 //! The launcher provides an [`eframe`]/[`egui`]-based user interface allowing developers
@@ -20,22 +20,22 @@ use common::r_log;
 use eframe::egui;
 use sysinfo::{ProcessesToUpdate, System};
 
-/// Application entry point for R.E.K.T.A.Launcher.
+/// Application entry point for Photon Launcher.
 ///
-/// Sets up the global logger sinks (`/tmp/rektal_launcher.log` and terminal stdout),
+/// Sets up the global logger sinks (`/tmp/photon_launcher.log` and terminal stdout),
 /// configures the native window viewport options, and initializes the [`eframe`] event loop.
 ///
 /// # Errors
 ///
 /// Returns an [`eframe::Result`] if native window creation or event loop initialization fails.
 fn main() -> eframe::Result<()> {
-    Logger::global().add_sink(Box::new(FileSink::new("rektal_launcher.log")));
+    Logger::global().add_sink(Box::new(FileSink::new("photon_launcher.log")));
     Logger::global().add_sink(Box::new(TerminalSink { cli_prompt: None }));
 
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([400.0, 320.0])
-            .with_title("R.E.K.T.A.Launcher")
+            .with_title("Photon Launcher")
             .with_resizable(false),
         ..Default::default()
     };
@@ -43,7 +43,7 @@ fn main() -> eframe::Result<()> {
     r_log!(Info, "eframe initialized");
 
     eframe::run_native(
-        "R.E.K.T.A.Launcher",
+        "Photon Launcher",
         options,
         Box::new(|cc| {
             Ok(Box::<LauncherApp>::new(LauncherApp::new(
@@ -77,17 +77,36 @@ impl LauncherApp {
         let mut search_dir = current_dir.clone();
         let mut workspace_dir = current_dir.clone();
 
-        // Search parent directories for the workspace folder containing 'gui' or 'kernel' Cargo.toml
         for _ in 0..5 {
+            if search_dir.join("photon_gui").join("Cargo.toml").exists()
+                || search_dir.join("photon_kernel").join("Cargo.toml").exists()
+            {
+                workspace_dir = search_dir.join("photon_gui");
+                break;
+            }
+            if search_dir.join("gui").join("Cargo.toml").exists()
+                || search_dir.join("kernel").join("Cargo.toml").exists()
+            {
+                workspace_dir = search_dir.join("gui");
+                break;
+            }
             if search_dir.join("rektal_gui").join("Cargo.toml").exists()
                 || search_dir.join("rektal_kernel").join("Cargo.toml").exists()
             {
                 workspace_dir = search_dir.join("rektal_gui");
                 break;
             }
-            if search_dir.join("Cargo.toml").exists() && search_dir.join("rektal_gui").exists() {
-                workspace_dir = search_dir.join("rektal_gui");
-                break;
+            if search_dir.join("Cargo.toml").exists() {
+                if search_dir.join("photon_gui").exists() {
+                    workspace_dir = search_dir.join("photon_gui");
+                    break;
+                } else if search_dir.join("gui").exists() {
+                    workspace_dir = search_dir.join("gui");
+                    break;
+                } else if search_dir.join("rektal_gui").exists() {
+                    workspace_dir = search_dir.join("rektal_gui");
+                    break;
+                }
             }
             if let Some(parent) = search_dir.parent() {
                 search_dir = parent.to_path_buf();
@@ -108,7 +127,7 @@ impl LauncherApp {
         }
     }
 
-    /// Renders the UI section for configuring and launching the REKTAL Kernel.
+    /// Renders the UI section for configuring and launching the Photon Kernel.
     ///
     /// Includes a live status indicator (green/red dot), a checkbox for toggling the
     /// terminal console, and a button to spawn the process if not already running.
@@ -159,7 +178,7 @@ impl LauncherApp {
         });
     }
 
-    /// Renders the UI section for configuring and launching the REKTAL GUI client.
+    /// Renders the UI section for configuring and launching the Photon GUI client.
     ///
     /// Includes a live status indicator (green/red dot), a checkbox for toggling the
     /// terminal console, and a button to spawn the process.
@@ -204,10 +223,10 @@ impl LauncherApp {
         });
     }
 
-    /// Checks whether a REKTAL Kernel process is currently active on the host system.
+    /// Checks whether a Photon Kernel process is currently active on the host system.
     ///
     /// Iterates through the active system processes cached in [`System`] to check if any process
-    /// name begins with `"kernel"`.
+    /// name matches the Kernel executable name.
     ///
     /// # Returns
     ///
@@ -216,13 +235,18 @@ impl LauncherApp {
         self.system
             .processes()
             .values()
-            .any(|p| p.name().to_string_lossy().starts_with("rektal_kernel"))
+            .any(|p| {
+                let name = p.name().to_string_lossy();
+                name.starts_with("photon_kernel")
+                    || name.starts_with("kernel")
+                    || name.starts_with("rektal_kernel")
+            })
     }
 
-    /// Checks whether a REKTAL GUI client process is currently active on the host system.
+    /// Checks whether a Photon GUI client process is currently active on the host system.
     ///
     /// Iterates through the active system processes cached in [`System`] to check if any process
-    /// name begins with `"gui"`.
+    /// name matches the GUI client executable name.
     ///
     /// # Returns
     ///
@@ -231,7 +255,12 @@ impl LauncherApp {
         self.system
             .processes()
             .values()
-            .any(|p| p.name().to_string_lossy().starts_with("rektal_gui"))
+            .any(|p| {
+                let name = p.name().to_string_lossy();
+                name.starts_with("photon_gui")
+                    || name.starts_with("gui")
+                    || name.starts_with("rektal_gui")
+            })
     }
 }
 

@@ -1,4 +1,5 @@
 //TODO: change the config-path to a os-typical one
+//TODO: press enter zum laden oder speichern in popup
 
 use eframe::egui;
 use std::path::{Path, PathBuf};

@@ -1,6 +1,6 @@
-//! # Rektal Lighting Control Kernel
+//! # Photon Lighting Control Kernel
 //!
-//! This is the main entry point for the Rektal lighting control kernel executable.
+//! This is the main entry point for the Photon lighting control kernel executable.
 //! It initializes the core logging infrastructure, parses command-line arguments,
 //! boots the fixture engine and DMX output interfaces, activates the TCP networking layer
 //! for client communication, and runs the primary interactive REPL shell.

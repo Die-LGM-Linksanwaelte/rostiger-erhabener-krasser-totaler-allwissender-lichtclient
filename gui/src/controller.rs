@@ -1,7 +1,7 @@
 //! # Controller Module
 //!
 //! The `controller` module acts as the central event handler and coordinator
-//! for the R.E.K.T.A.L. GUI application.
+//! for the Photon GUI application.
 //!
 //! It is responsible for:
 //! - Draining incoming DMX universe stream data and updating universe UI panels.
@@ -23,12 +23,11 @@ use common::networking::subscription_objects::{SubscribeTopic, TopicPayload};
 use common::{r_debug_log, r_log};
 use eframe::egui::Color32;
 use egui_dock::DockState;
+use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::fs::OpenOptions;
-use std::io::Write;
 use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, Sender};
-use std::fmt;
 
 /// Enum describing global GUI events dispatched across the application.
 ///
@@ -73,6 +72,12 @@ pub enum UiEvent {
         /// The subscription topic requested.
         topic: SubscribeTopic,
     },
+    UnsubscribeRequest {
+        topic: SubscribeTopic,
+    },
+    CloseTab {
+        tab: Tab,
+    },
 }
 
 impl Display for UiEvent {
@@ -95,8 +100,10 @@ impl Display for UiEvent {
             UiEvent::DisconnectRequest => write!(f, "DisconnectRequest"),
             UiEvent::SubscribeRequest { topic } => write!(f, "SubscribeRequest, topic: {}", topic),
             UiEvent::SaveGuiLayout { path } => write!(f, "SaveGuiLayout: {}", path.display()),
-            UiEvent::LoadGuiLayout{path} => write!(f, "LoadGuiLayout: {}", path.display()),
+            UiEvent::LoadGuiLayout { path } => write!(f, "LoadGuiLayout: {}", path.display()),
             UiEvent::ResetGuiLayout => write!(f, "ResetGuiLayout"),
+            UiEvent::CloseTab { tab } => write!(f, "CloseTab: {}", tab),
+            UiEvent::UnsubscribeRequest { topic } => write!(f, "UnsubscribeRequest: {}", topic),
         }
     }
 }
@@ -120,6 +127,16 @@ pub(crate) fn handle_dmx_data(
             }
         }
     }
+}
+
+pub fn get_tab_count(tab: &Tab, tree: &mut DockState<Tab>) -> u32 {
+    let mut count = 0;
+    for (_, tab_in_tree) in tree.iter_all_tabs_mut() {
+        if tab.is_same_type(tab_in_tree) {
+            count += 1;
+        }
+    }
+    count
 }
 
 /// Thread-safe helper to send a [`UiEvent`] into the global [`UI_EVENT_SENDER`] channel.
@@ -172,22 +189,24 @@ pub fn save_gui_layout(path_buf: PathBuf, tree: &mut DockState<Tab>) {
 
     let saved_layout = tree.map_tabs(|tab| {
         match tab {
-            Tab::Universe(_) => TabSaveData::Universe {selected_universe: 1}, //TODO anpassen!
+            Tab::Universe(universe_panel) => TabSaveData::Universe {
+                selected_universe: universe_panel.selected_universe,
+            },
             Tab::Terminal(_) => TabSaveData::Terminal,
             Tab::Patch(_) => TabSaveData::Patch,
         }
     });
 
-    let gui_config = GuiLayout{
+    let gui_config = GuiLayout {
         //TODO richtige werte anpassen!!!!
-
         role: Default::default(),
         name: "".to_string(),
         description: "".to_string(),
         window_layout: saved_layout,
     };
 
-    if let Err(e) = serde_json::to_writer_pretty(file, &gui_config) { //TODO ordner erstellen falls er nicht existiert
+    if let Err(e) = serde_json::to_writer_pretty(file, &gui_config) {
+        //TODO ordner erstellen falls er nicht existiert
         r_log!(Error, "Failed to serialize GUI config: {}", e);
     }
 }
@@ -211,33 +230,42 @@ fn load_gui_layout(path_buf: PathBuf, tree: &mut DockState<Tab>) {
         }
     };
     // 1. Erstmal mappen (die Closure ist zustandslos und damit automatisch Clone):
-    *tree = gui_config.window_layout.map_tabs(|save_data| {
-        match save_data {
-            TabSaveData::Terminal => {
-                Tab::Terminal(panels::terminal::TerminalPanel::new(0, false))
-            }
-            TabSaveData::Patch => {
-                Tab::Patch(panels::patch::PatchPanel::new(0))
-            }
+    *tree = gui_config
+        .window_layout
+        .map_tabs(|save_data| match save_data {
+            TabSaveData::Terminal => Tab::Terminal(panels::terminal::TerminalPanel::new(0, false)),
+            TabSaveData::Patch => Tab::Patch(panels::patch::PatchPanel::new(0)),
             TabSaveData::Universe { selected_universe } => {
                 let mut panel = panels::universe::UniversePanel::new(0);
                 panel.selected_universe = *selected_universe;
                 Tab::Universe(panel)
             }
-        }
-    });
+        });
 
     // 2. Jetzt in einer normalen for-Schleife die IDs durchnummerieren:
     let mut id = 1;
     for (_, tab) in tree.iter_all_tabs_mut() {
         match tab {
-            Tab::Terminal(p) => { p.tab_id = id; id += 1; }
-            Tab::Patch(p) => { p.tab_id = id; id += 1; }
-            Tab::Universe(p) => { p.tab_id = id; id += 1; }
+            Tab::Terminal(p) => {
+                p.tab_id = id;
+                id += 1;
+            }
+            Tab::Patch(p) => {
+                p.tab_id = id;
+                id += 1;
+            }
+            Tab::Universe(p) => {
+                p.tab_id = id;
+                id += 1;
+            }
         }
     }
 
-    r_log!(UserSuccess, "Successfully loaded GUI layout from {:?}", path_buf);
+    r_log!(
+        UserSuccess,
+        "Successfully loaded GUI layout from {:?}",
+        path_buf
+    );
 }
 
 /// Processes a command entered into a terminal tab.
@@ -350,21 +378,24 @@ pub(crate) fn handle_incoming_network_data(
                 },
                 TcpServerMessage::ShutdownAnnouncement => {
                     send_ui_event(UiEvent::SetConnectionState {
-                        state: ConnectionState::Disconnected
+                        state: ConnectionState::Disconnected,
                     });
-                },
-                TcpServerMessage::Unauthenticated => {
-                    r_log!(UserError, "Server couldn't handle request: User Unauthenticated!");
                 }
-                TcpServerMessage::ReloginOk {token} => {
+                TcpServerMessage::Unauthenticated => {
+                    r_log!(
+                        UserError,
+                        "Server couldn't handle request: User Unauthenticated!"
+                    );
+                }
+                TcpServerMessage::ReloginOk { token } => {
                     r_log!(UserSuccess, "Relogin Successful! Token: {}", token);
                     //TODO..
                 }
-                TcpServerMessage::ReloginFailed {reason} => {
+                TcpServerMessage::ReloginFailed { reason } => {
                     r_log!(UserError, "Relogin failed: {}", reason);
                     //TODO..
                 }
-                TcpServerMessage::Kicked {reason} => {
+                TcpServerMessage::Kicked { reason } => {
                     r_log!(UserError, "Client was kicked: {}", reason);
                     //TODO
                 }
@@ -394,7 +425,7 @@ pub(crate) fn handle_events(
     tree: &mut DockState<Tab>,
 ) {
     while let Ok(event) = ui_receiver.try_recv() {
-        r_debug_log!(Info, "UIEvent: {}" ,event);
+        r_debug_log!(Info, "UIEvent: {}", event);
         match event {
             UiEvent::SendTerminalCommand { id, command } => {
                 process_terminal_command(id, command, tcp_sender, tree);
@@ -491,11 +522,34 @@ pub(crate) fn handle_events(
             UiEvent::SaveGuiLayout { path } => {
                 save_gui_layout(path, tree);
             }
-            UiEvent::LoadGuiLayout {path} => {
+            UiEvent::LoadGuiLayout { path } => {
                 load_gui_layout(PathBuf::new().join(path), tree);
             }
             UiEvent::ResetGuiLayout => {
-                load_gui_layout(PathBuf::new().join("config/window_layouts/default.json"), tree);
+                load_gui_layout(
+                    PathBuf::new().join("config/window_layouts/default.json"),
+                    tree,
+                );
+            }
+            UiEvent::CloseTab { tab } => {
+                if get_tab_count(&tab, tree) == 0 {
+                    let topic_option: Option<SubscribeTopic> = match tab {
+                        Tab::Terminal { .. } => None,
+                        Tab::Universe { .. } => Some(SubscribeTopic::DMXConfiguration),
+                        Tab::Patch { .. } => None,
+                    };
+                    if let Some(topic) = topic_option {
+                        send_ui_event(UiEvent::UnsubscribeRequest { topic });
+                    }
+                }
+            }
+            UiEvent::UnsubscribeRequest { topic } => {
+                let msg = TcpClientMessage::Unsubscribe { topic };
+                if let Some(tcp_sender) = tcp_sender {
+                    if let Err(e) = tcp_sender.send(msg) {
+                        r_log!(Error, "Failed to send unsubscribe message: {}", e);
+                    }
+                }
             }
         }
     }

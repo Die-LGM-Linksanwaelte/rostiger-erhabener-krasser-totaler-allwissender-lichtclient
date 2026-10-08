@@ -1,7 +1,7 @@
 //! # Process Spawner Module
 //!
 //! Provides platform-independent facilities for spawning, detaching, and
-//! managing child processes (such as the REKTAL Kernel and GUI client).
+//! managing child processes (such as the Photon Kernel and GUI client).
 //!
 //! ## Process Independence & Detachment
 //! All processes spawned via this module are detached from the parent Launcher
@@ -16,7 +16,7 @@ use std::process::{Command, Stdio};
 use common::logging::LogLevel::Info;
 use common::r_log;
 
-/// Spawns a REKTAL binary (e.g. `"kernel"` or `"gui"`) as an independent, detached process.
+/// Spawns a Photon binary (e.g. `"kernel"` or `"gui"`) as an independent, detached process.
 ///
 /// Resolves the sibling binary located alongside the current launcher executable and launches
 /// it with the provided CLI arguments.
@@ -53,15 +53,35 @@ pub fn spawn_process(bin_name: &str, args: &[&str], show_console: bool) -> std::
         .map(|p| p.to_path_buf())
         .unwrap_or_else(|| std::path::PathBuf::from("."));
 
-    #[cfg(target_os = "windows")]
-    let target_exe = if exe_dir.join(format!("{}.exe", bin_name)).exists() {
-        exe_dir.join(format!("{}.exe", bin_name))
+    let candidate_names: Vec<String> = if bin_name.starts_with("photon_") || bin_name.starts_with("rektal_") {
+        vec![bin_name.to_string()]
     } else {
-        exe_dir.join(bin_name)
+        vec![
+            format!("photon_{}", bin_name),
+            bin_name.to_string(),
+            format!("rektal_{}", bin_name),
+        ]
     };
 
+    #[cfg(target_os = "windows")]
+    let target_exe = candidate_names
+        .iter()
+        .map(|name| exe_dir.join(format!("{}.exe", name)))
+        .find(|p| p.exists())
+        .unwrap_or_else(|| {
+            candidate_names
+                .iter()
+                .map(|name| exe_dir.join(name))
+                .find(|p| p.exists())
+                .unwrap_or_else(|| exe_dir.join(format!("{}.exe", bin_name)))
+        });
+
     #[cfg(not(target_os = "windows"))]
-    let target_exe = exe_dir.join(bin_name);
+    let target_exe = candidate_names
+        .iter()
+        .map(|name| exe_dir.join(name))
+        .find(|p| p.exists())
+        .unwrap_or_else(|| exe_dir.join(bin_name));
 
     #[cfg(target_os = "windows")]
     {
@@ -88,7 +108,7 @@ pub fn spawn_process(bin_name: &str, args: &[&str], show_console: bool) -> std::
     }
 }
 
-/// Spawns the REKTAL Kernel executable with optional arguments and console window.
+/// Spawns the Photon Kernel executable with optional arguments and console window.
 ///
 /// Convenience wrapper around [`spawn_process`] with `bin_name = "kernel"`.
 ///
@@ -106,10 +126,10 @@ pub fn spawn_process(bin_name: &str, args: &[&str], show_console: bool) -> std::
 /// let _child = spawn_kernel(&[], true);
 /// ```
 pub fn spawn_kernel(args: &[&str], show_console: bool) -> std::io::Result<std::process::Child> {
-    spawn_process("rektal_kernel", args, show_console)
+    spawn_process("kernel", args, show_console)
 }
 
-/// Spawns the REKTAL GUI client executable with optional arguments and console window.
+/// Spawns the Photon GUI client executable with optional arguments and console window.
 ///
 /// Convenience wrapper around [`spawn_process`] with `bin_name = "gui"`.
 ///
@@ -127,7 +147,7 @@ pub fn spawn_kernel(args: &[&str], show_console: bool) -> std::io::Result<std::p
 /// let _child = spawn_gui(&[], false);
 /// ```
 pub fn spawn_gui(args: &[&str], show_console: bool) -> std::io::Result<std::process::Child> {
-    spawn_process("rektal_gui", args, show_console)
+    spawn_process("gui", args, show_console)
 }
 
 /// Spawns a process on Windows with process group detachment and optional console window.
@@ -180,7 +200,7 @@ fn spawn_linux(
         return cmd.spawn();
     }
 
-    let title = format!("REKTAL {}", bin_name.to_uppercase());
+    let title = format!("Photon {}", bin_name.to_uppercase());
     let formatted_args = args
         .iter()
         .map(|a| format!("'{}'", a.replace('\'', "'\\''")))

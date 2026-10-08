@@ -1,4 +1,4 @@
-//! # R.E.K.T.A.L. GUI Library
+//! # Photon GUI Library
 //!
 //! Core library implementing application state, docking panels, and network communication.
 
@@ -39,7 +39,7 @@ pub static UI_EVENT_SENDER: LazyLock<RwLock<Option<Sender<UiEvent>>>> =
 ///
 /// Holds the docking state tree, user session parameters, network connection states,
 /// and active communication channels between threads.
-pub struct RektalGui {
+pub struct Gui {
     /// The docking state tree holding all open tabs (Terminals, Universes, etc.).foo: u32,
     pub tree: DockState<Tab>,
     /// Whether the session settings modal window is currently open.
@@ -80,8 +80,8 @@ pub struct RektalGui {
     pub device_configuration: Option<Vec<FixtureType>>,
 }
 
-impl RektalGui {
-    /// Creates a new instance of [`RektalGui`] initialized with default panels, channels, and listeners.
+impl Gui {
+    /// Creates a new instance of [`Gui`] initialized with default panels, channels, and listeners.
     ///
     /// # Arguments
     /// * `ctx` - The `egui::Context` reference for UI repaint signals.
@@ -645,7 +645,7 @@ impl RektalGui {
                 // Rechte Seite der Bottom-Bar
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                     ui.label(format!(
-                        "R.E.K.T.A.L. Version: {}",
+                        "Photon Version: {}",
                         env!("CARGO_PKG_VERSION")
                     ));
                 });
@@ -654,7 +654,7 @@ impl RektalGui {
     }
 }
 
-impl eframe::App for RektalGui {
+impl eframe::App for Gui {
     /// Main frame update callback invoked on every UI render pass.
     ///
     /// Processes queued DMX packets, network server messages, and UI events,
@@ -735,5 +735,11 @@ impl TabViewer for MyTabViewer {
     /// Returns the unique `egui::Id` identifier for tab tracking.
     fn id(&mut self, tab: &mut Self::Tab) -> Id {
         Id::new(tab.unique_id())
+    }
+
+    /// Handles closing of a tab, invoking the tab's close lifecycle logic.
+    fn on_close(&mut self, tab: &mut Self::Tab) -> bool {
+        tab.on_close();
+        true
     }
 }

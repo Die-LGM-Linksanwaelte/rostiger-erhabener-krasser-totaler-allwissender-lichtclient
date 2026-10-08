@@ -26,7 +26,7 @@ fn main() {
     let protocol_hash = common::networking::messages::get_protocol_version();
 
     let req = HandshakeRequest {
-        magic_string: "REKTAL".into(),
+        magic_string: "PHOTON".into(),
         protocol_hash,
         client_version: client_version.into(),
     };

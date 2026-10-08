@@ -1,7 +1,6 @@
 [workspace]
-#name = "R.E.K.T.A.L."
+#name = "Photon"
 resolver = "1"
-version = "0.1.0"
 members = [
     "gui",
     "kernel",

@@ -4,7 +4,6 @@ use eframe::Theme;
 use egui::accesskit::Role;
 use egui_dock::DockState;
 use serde::{Deserialize, Serialize};
-use std::fmt::Display;
 
 #[derive(Serialize, Deserialize)]
 pub struct GuiConfig {

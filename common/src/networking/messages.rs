@@ -11,7 +11,7 @@ pub type SessionID = u64;
 /// Initial payload sent by a client upon connecting to verify compatibility.
 #[derive(Serialize, Deserialize, Debug)]
 pub struct HandshakeRequest {
-    /// Must always be exactly "REKTAL" to identify the protocol.
+    /// Must always be exactly "PHOTON" to identify the protocol.
     pub magic_string: String,
     /// A hash verifying the client and server share the exact same network message definitions.
     pub protocol_hash: String,

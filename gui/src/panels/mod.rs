@@ -3,6 +3,8 @@
 //! This module defines the core panel types and docking tab structures used by the GUI interface.
 //! It exposes the [`Tab`] enum encapsulating various panel components like [`UniversePanel`] and [`TerminalPanel`].
 
+use std::fmt;
+use std::fmt::{Display, Formatter};
 use eframe::egui;
 use serde::{Deserialize, Serialize};
 use common::logging::LogLevel::Error;
@@ -19,7 +21,7 @@ pub mod patch;
 use terminal::TerminalPanel;
 use universe::UniversePanel;
 use patch::PatchPanel;
-use crate::controller::UiEvent;
+use crate::controller::{send_ui_event, UiEvent};
 use crate::UI_EVENT_SENDER;
 
 /// Enum
@@ -41,6 +43,19 @@ pub enum Tab {
     Patch(PatchPanel),
 }
 
+impl Display for Tab {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            Tab::Universe{ .. } => {
+                write!(f, "{}", serde_json::to_string("UniverseTab").unwrap())},
+            Tab::Terminal{ .. } => {
+                write!(f, "{}", serde_json::to_string("TerminalTab").unwrap())},
+            Tab::Patch{ .. } => {
+                write!(f, "{}", serde_json::to_string("PatchTab").unwrap())},
+        }
+    }
+}
+
 impl Tab {
     /// Returns the human-readable display title for this tab header.
     pub fn title(&self) -> String {
@@ -49,6 +64,10 @@ impl Tab {
             Tab::Terminal(_) => "Terminal".to_string(),
             Tab::Patch(_) => "Patch".to_string(),
         }
+    }
+
+    pub fn is_same_type(&self, other: &Self) -> bool {
+        std::mem::discriminant(self) == std::mem::discriminant(other)
     }
 
     /// Returns a unique string identifier for this tab instance used by the dock state.
@@ -90,6 +109,8 @@ impl Tab {
     }
 
     pub fn on_close(&mut self) {
-        //TODO: Unsubscribe topics if needed
+        send_ui_event(UiEvent::CloseTab {
+            tab: self.clone(),
+        });
     }
 }

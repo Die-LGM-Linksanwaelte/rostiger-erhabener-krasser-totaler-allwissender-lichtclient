@@ -1,7 +1,7 @@
 //! # Kernel Networking Module
 //!
 //! This module acts as the central communication hub and TCP server management layer for the
-//! Rektal lighting control kernel. It is responsible for accepting incoming client connections,
+//! Photon lighting control kernel. It is responsible for accepting incoming client connections,
 //! enforcing protocol version compatibility, handling secure authentication handshakes, and
 //! maintaining persistent user sessions.
 //!

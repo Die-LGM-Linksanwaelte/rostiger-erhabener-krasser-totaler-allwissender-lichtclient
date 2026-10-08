@@ -139,8 +139,8 @@ fn check_version_compatibility(stream: &mut TcpStream) -> Result<(), HandshakeEr
 
     match bincode::deserialize::<HandshakeRequest>(&bytes) {
         Ok(request) => {
-            if request.magic_string != "REKTAL" {
-                return Err(HandshakeError::InvalidData("Wrong magic string. Client is not an Rektal-Client".into()));
+            if request.magic_string != "PHOTON" {
+                return Err(HandshakeError::InvalidData("Wrong magic string. Client is not a Photon client".into()));
             }
 
             let server_hash = common::networking::messages::get_protocol_version();

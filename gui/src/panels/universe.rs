@@ -1,6 +1,6 @@
 //! # Universe Panel Module
 //!
-//! This module implements the visual DMX Universe view for the R.E.K.T.A.L. GUI application.
+//! This module implements the visual DMX Universe view for the Photon GUI application.
 //! It renders up to 512 DMX channels per universe in a dynamic, responsive grid layout,
 //! displays live channel values, and optionally overlays patched fixture devices and property types.
 

@@ -1,9 +1,9 @@
-## R.E.K.T.A.L. - der rostige erhabene krasse totale allwissende Lichtclient
+## Photon - Lichtsteuerung
 
-### Rektal Wiki
+### Photon Wiki
 
-https://rektal-wiki.lgm-linksanwaelte.de/
+https://photon-wiki.lgm-linksanwaelte.de/
 
-### Rektal Dokumentation
+### Photon Dokumentation
 
-https://rektal-doku.lgm-linksanwaelte.de/
+https://photon-doku.lgm-linksanwaelte.de/
